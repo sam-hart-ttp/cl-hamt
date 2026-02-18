@@ -9,6 +9,13 @@
 (defconstant +bitmap-bits+ (ash 1 +slice-bits+))
 (defconstant +max-hash-depth+ (floor (1- +hash-bits+) +slice-bits+))
 
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (unless (member +slice-bits+ '(5 6))
+    (error "Invalid +SLICE-BITS+ value ~S. Expected 5 or 6." +slice-bits+))
+  (unless (<= +bitmap-bits+ 64)
+    (error "Invalid +SLICE-BITS+ value ~S; bitmap width would exceed 64 bits."
+           +slice-bits+)))
+
 (declaim (inline get-bits get-index vec-insert vec-remove vec-update))
 
 (declaim (inline %u32 %u64 %rotl32 %rotl64))
