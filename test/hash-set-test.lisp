@@ -20,7 +20,15 @@
 
 (test hash-mode-validation
   (signals error
-    (empty-set :hash-mode :unknown)))
+    (empty-set :hash-mode :unknown))
+  (signals error
+    (empty-set :test #'equalp :hash-mode :fast))
+  (is (typep (empty-set :test #'equalp
+                        :hash (lambda (x)
+                                (ldb (byte 64 0) (sxhash (if (stringp x)
+                                                             (string-downcase x)
+                                                             x)))))
+             'hash-set)))
 
 (test hash-output-range-and-spread
   (let* ((samples (loop for i below 128 collect (format nil "item-~D" i)))

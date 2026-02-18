@@ -377,6 +377,24 @@ or circular structures."
   (declare (optimize (speed 3) (safety 0) (debug 0)))
   (%siphash64-octets (%object->octets obj)))
 
+(defun coerce-test-function (test)
+  (ctypecase test
+    (function test)
+    (symbol (symbol-function test))))
+
+(defun default-hash-test-compatible-p (test-fn)
+  "Default hash modes are only guaranteed for EQ/EQL/EQUAL semantics."
+  (or (eq test-fn #'eq)
+      (eq test-fn #'eql)
+      (eq test-fn #'equal)))
+
+(defun validate-hash-test-compatibility (test-fn hash hash-mode)
+  (declare (ignore hash-mode))
+  (when (and (null hash)
+             (not (default-hash-test-compatible-p test-fn)))
+    (error "Default hash modes require TEST to be EQ, EQL, or EQUAL. Supply an explicit compatible :HASH for TEST ~S."
+           test-fn)))
+
 (defun resolve-hash-function (hash hash-mode)
   "Resolve a hash function from explicit HASH or HASH-MODE.
 HASH-MODE values:

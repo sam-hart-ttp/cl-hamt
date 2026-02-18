@@ -21,7 +21,15 @@
 
 (test hash-mode-validation
   (signals error
-    (empty-dict :hash-mode :unknown)))
+    (empty-dict :hash-mode :unknown))
+  (signals error
+    (empty-dict :test #'equalp :hash-mode :fast))
+  (is (typep (empty-dict :test #'equalp
+                         :hash (lambda (x)
+                                 (ldb (byte 64 0) (sxhash (if (stringp x)
+                                                              (string-downcase x)
+                                                              x)))))
+             'hash-dict)))
 
 (test hash-mode-smoke
   (let* ((pairs (loop for i below 64

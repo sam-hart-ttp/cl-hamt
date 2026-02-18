@@ -170,11 +170,11 @@ If HASH is not supplied, HASH-MODE chooses:
   :KEYED  - SipHash-2-4 over sxhash (keyed mixer)
   :SECURE - SipHash-2-4 over canonical safe object bytes.
 If HASH is supplied, it must return an unsigned 64-bit integer."
-  (make-instance 'hash-dict
-                 :test (ctypecase test
-                         (function test)
-                         (symbol (symbol-function test)))
-                 :hash (resolve-hash-function hash hash-mode)))
+  (let ((test-fn (coerce-test-function test)))
+    (validate-hash-test-compatibility test-fn hash hash-mode)
+    (make-instance 'hash-dict
+                   :test test-fn
+                   :hash (resolve-hash-function hash hash-mode))))
 
 (defun dict-lookup (dict key)
   "Multiply-return the value mapped to by the key in the dictionary and
