@@ -94,9 +94,15 @@ Uses process-local random keys."
   "Resolve a hash function from explicit HASH or HASH-MODE.
 HASH-MODE values: :FAST (xxHash32, default), :SECURE (SipHash-2-4)."
   (cond
-    (hash (ctypecase hash
-            (function hash)
-            (symbol (symbol-function hash))))
+    (hash (let ((hash-fn (ctypecase hash
+                           (function hash)
+                           (symbol (symbol-function hash)))))
+            (lambda (obj)
+              (let ((value (funcall hash-fn obj)))
+                (if (typep value '(unsigned-byte 32))
+                    value
+                    (error "Custom hash function ~S returned ~S for ~S; expected an unsigned 32-bit integer."
+                           hash value obj))))))
     ((or (null hash-mode) (eq hash-mode :fast))
      #'xxhash32-object)
     ((eq hash-mode :secure)

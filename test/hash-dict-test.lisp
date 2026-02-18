@@ -7,6 +7,18 @@
 (test empty-dict
   (is (not (dict-lookup (empty-dict) "hello"))))
 
+(test custom-hash-validation
+  (signals error
+    (dict-insert (empty-dict :hash (lambda (x)
+                                     (declare (ignore x))
+                                     -1))
+                 "bad" 1))
+  (signals error
+    (dict-insert (empty-dict :hash (lambda (x)
+                                     (declare (ignore x))
+                                     (ash 1 40)))
+                 "bad" 1)))
+
 
 (defvar pacers (dict-insert (empty-dict)
                             "Reggie Miller" 2.01

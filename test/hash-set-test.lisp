@@ -6,6 +6,18 @@
 (test empty
       (is (= 0 (set-size (empty-set)))))
 
+(test custom-hash-validation
+  (signals error
+    (set-insert (empty-set :hash (lambda (x)
+                                   (declare (ignore x))
+                                   -1))
+                "bad-hash"))
+  (signals error
+    (set-insert (empty-set :hash (lambda (x)
+                                   (declare (ignore x))
+                                   (ash 1 40)))
+                "bad-hash")))
+
 (defvar swinging-hepcats
   (set-insert (empty-set)
               "Louis Armstrong"
