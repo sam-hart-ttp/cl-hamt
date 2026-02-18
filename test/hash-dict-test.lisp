@@ -29,13 +29,18 @@
          (fast (reduce (lambda (d p) (dict-insert d (car p) (cdr p)))
                        pairs
                        :initial-value (empty-dict :hash-mode :fast)))
+         (keyed (reduce (lambda (d p) (dict-insert d (car p) (cdr p)))
+                        pairs
+                        :initial-value (empty-dict :hash-mode :keyed)))
          (secure (reduce (lambda (d p) (dict-insert d (car p) (cdr p)))
                          pairs
                          :initial-value (empty-dict :hash-mode :secure))))
     (is (= (length pairs) (dict-size fast)))
+    (is (= (length pairs) (dict-size keyed)))
     (is (= (length pairs) (dict-size secure)))
     (is-true (every (lambda (p)
                       (and (equal (dict-lookup fast (car p)) (cdr p))
+                           (equal (dict-lookup keyed (car p)) (cdr p))
                            (equal (dict-lookup secure (car p)) (cdr p))))
                     pairs))))
 

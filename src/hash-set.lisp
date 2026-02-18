@@ -127,9 +127,11 @@
 (defun empty-set (&key (test #'equal) hash (hash-mode :fast))
   "Return an empty hash-set, in which elements will be compared and hashed
 with the supplied test and hash functions. The hash must be a 32-bit hash.
-If HASH is not supplied, HASH-MODE chooses :FAST (xxHash32) or :SECURE (SipHash),
-both of which mix `sxhash`. If HASH is supplied, it must return an unsigned
-32-bit integer."
+If HASH is not supplied, HASH-MODE chooses:
+  :FAST   - xxHash32 over sxhash
+  :KEYED  - SipHash-2-4 over sxhash (keyed mixer)
+  :SECURE - SipHash-2-4 over serialized object bytes.
+If HASH is supplied, it must return an unsigned 32-bit integer."
   (make-instance 'hash-set
                  :test (ctypecase test
                          (function test)

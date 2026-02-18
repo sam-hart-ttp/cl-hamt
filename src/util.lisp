@@ -31,6 +31,114 @@
   (%u64 (logior (ash x r)
                 (ash x (- r 64)))))
 
+(defun %string->utf8-octets (string)
+  "Encode STRING as UTF-8 octets."
+  (declare (optimize (speed 3) (safety 0) (debug 0))
+           (type string string))
+  (let ((octets (make-array 0
+                            :element-type '(unsigned-byte 8)
+                            :adjustable t
+                            :fill-pointer 0)))
+    (declare (type (vector (unsigned-byte 8)) octets))
+    (labels ((emit (byte)
+               (vector-push-extend (%u32 byte) octets)))
+      (loop for ch across string
+            for cp = (char-code ch) do
+              (cond
+                ((<= cp #x7F)
+                 (emit cp))
+                ((<= cp #x7FF)
+                 (emit (logior #xC0 (ash cp -6)))
+                 (emit (logior #x80 (logand cp #x3F))))
+                ((<= cp #xFFFF)
+                 (emit (logior #xE0 (ash cp -12)))
+                 (emit (logior #x80 (logand (ash cp -6) #x3F)))
+                 (emit (logior #x80 (logand cp #x3F))))
+                ((<= cp #x10FFFF)
+                 (emit (logior #xF0 (ash cp -18)))
+                 (emit (logior #x80 (logand (ash cp -12) #x3F)))
+                 (emit (logior #x80 (logand (ash cp -6) #x3F)))
+                 (emit (logior #x80 (logand cp #x3F))))
+                (t
+                 (emit #x3F)))))
+    octets))
+
+(defun %object->octets (obj)
+  "Serialize OBJ into UTF-8 octets using escaped printed representation."
+  (declare (optimize (speed 3) (safety 0) (debug 0)))
+  (%string->utf8-octets
+   (with-standard-io-syntax
+     (let ((*print-readably* nil)
+           (*print-escape* t)
+           (*print-circle* t)
+           (*print-level* nil)
+           (*print-length* nil)
+           (*print-array* t)
+           (*read-eval* nil))
+       (write-to-string obj)))))
+
+(defun %siphash32-octets (octets)
+  "SipHash-2-4 over OCTETS using process-local random keys, truncated to 32-bit."
+  (declare (optimize (speed 3) (safety 0) (debug 0))
+           (type (vector (unsigned-byte 8)) octets))
+  (let* ((k0 *siphash-k0*)
+         (k1 *siphash-k1*)
+         (v0 (logxor #x736f6d6570736575 k0))
+         (v1 (logxor #x646f72616e646f6d k1))
+         (v2 (logxor #x6c7967656e657261 k0))
+         (v3 (logxor #x7465646279746573 k1))
+         (len (length octets))
+         (full-end (* 8 (floor len 8))))
+    (declare (type (unsigned-byte 64) k0 k1 v0 v1 v2 v3)
+             (type fixnum len full-end))
+    (labels ((sipround ()
+               (setf v0 (%u64 (+ v0 v1)))
+               (setf v1 (%rotl64 v1 13))
+               (setf v1 (logxor v1 v0))
+               (setf v0 (%rotl64 v0 32))
+               (setf v2 (%u64 (+ v2 v3)))
+               (setf v3 (%rotl64 v3 16))
+               (setf v3 (logxor v3 v2))
+               (setf v0 (%u64 (+ v0 v3)))
+               (setf v3 (%rotl64 v3 21))
+               (setf v3 (logxor v3 v0))
+               (setf v2 (%u64 (+ v2 v1)))
+               (setf v1 (%rotl64 v1 17))
+               (setf v1 (logxor v1 v2))
+               (setf v2 (%rotl64 v2 32)))
+             (compress (m)
+               (setf v3 (logxor v3 m))
+               (sipround)
+               (sipround)
+               (setf v0 (logxor v0 m))))
+      (loop for i fixnum from 0 below full-end by 8 do
+        (let ((m 0))
+          (declare (type (unsigned-byte 64) m))
+          (setf m (%u64
+                   (logior (ash (aref octets (+ i 0)) 0)
+                           (ash (aref octets (+ i 1)) 8)
+                           (ash (aref octets (+ i 2)) 16)
+                           (ash (aref octets (+ i 3)) 24)
+                           (ash (aref octets (+ i 4)) 32)
+                           (ash (aref octets (+ i 5)) 40)
+                           (ash (aref octets (+ i 6)) 48)
+                           (ash (aref octets (+ i 7)) 56))))
+          (compress m)))
+      (let ((b (%u64 (ash len 56))))
+        (declare (type (unsigned-byte 64) b))
+        (loop for i fixnum from full-end below len do
+          (setf b (%u64
+                   (logior b
+                           (ash (aref octets i)
+                                (* 8 (- i full-end)))))))
+        (compress b))
+      (setf v2 (logxor v2 #xff))
+      (sipround)
+      (sipround)
+      (sipround)
+      (sipround)
+      (%u32 (logxor v0 v1 v2 v3)))))
+
 (defun xxhash32-object (obj &optional (seed 0))
   "xxHash32 over the 32-bit sxhash representation of OBJ."
   (declare (optimize (speed 3) (safety 0) (debug 0))
@@ -50,9 +158,9 @@
     (setf h (logxor h (ash h -16)))
     h))
 
-(defun siphash32-object (obj)
+(defun siphash32-sxhash-object (obj)
   "SipHash-2-4 over the 64-bit sxhash representation of OBJ, truncated to 32-bit.
-Uses process-local random keys."
+This is a keyed mixer over sxhash."
   (declare (optimize (speed 3) (safety 0) (debug 0)))
   (let* ((k0 *siphash-k0*)
          (k1 *siphash-k1*)
@@ -90,9 +198,18 @@ Uses process-local random keys."
       (sipround)
       (%u32 (logxor v0 v1 v2 v3)))))
 
+(defun siphash32-object (obj)
+  "SipHash-2-4 over UTF-8 bytes of OBJ's escaped printed representation,
+truncated to 32-bit. Uses process-local random keys."
+  (declare (optimize (speed 3) (safety 0) (debug 0)))
+  (%siphash32-octets (%object->octets obj)))
+
 (defun resolve-hash-function (hash hash-mode)
   "Resolve a hash function from explicit HASH or HASH-MODE.
-HASH-MODE values: :FAST (xxHash32, default), :SECURE (SipHash-2-4)."
+HASH-MODE values:
+  :FAST   - xxHash32 over sxhash (default)
+  :KEYED  - SipHash-2-4 over sxhash (legacy secure-mixer behavior)
+  :SECURE - SipHash-2-4 over serialized object bytes."
   (cond
     (hash (let ((hash-fn (ctypecase hash
                            (function hash)
@@ -105,9 +222,11 @@ HASH-MODE values: :FAST (xxHash32, default), :SECURE (SipHash-2-4)."
                            hash value obj))))))
     ((or (null hash-mode) (eq hash-mode :fast))
      #'xxhash32-object)
+    ((eq hash-mode :keyed)
+     #'siphash32-sxhash-object)
     ((eq hash-mode :secure)
      #'siphash32-object)
-    (t (error "Unknown hash mode ~S (expected :FAST or :SECURE)." hash-mode))))
+    (t (error "Unknown hash mode ~S (expected :FAST, :KEYED, or :SECURE)." hash-mode))))
 
 (defun get-bits (hash depth)
   "Extract bits 5*depth : 5*(depth+1) from the number hash."
