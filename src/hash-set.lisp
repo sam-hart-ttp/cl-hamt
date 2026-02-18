@@ -10,11 +10,8 @@
     (set-conflict
      (member key (conflict-entries node) :test test))
     (set-table
-     (with-table node hash depth
+     (with-typed-table node hash depth
          (bitmap array bits index hit)
-       (declare (type (unsigned-byte 64) bitmap)
-                (type simple-vector array)
-                (type fixnum bits index))
        (when hit
          (%set-lookup-node (aref array index) key hash (1+ depth) test))))
     (t nil)))
@@ -42,11 +39,8 @@
             :hash hash
             :entries (cons key entries)))))
     (set-table
-     (with-table node hash depth
+     (with-typed-table node hash depth
          (bitmap array bits index hit)
-       (declare (type (unsigned-byte 64) bitmap)
-                (type simple-vector array)
-                (type fixnum bits index))
        (if hit
            (let* ((old-node (aref array index))
                   (new-node (%set-insert-node old-node key hash (1+ depth) test)))
@@ -83,11 +77,8 @@
              :hash hash
              :entries (nreverse kept))))))
     (set-table
-     (with-table node hash depth
+     (with-typed-table node hash depth
          (bitmap array bits index hit)
-       (declare (type (unsigned-byte 64) bitmap)
-                (type simple-vector array)
-                (type fixnum bits index))
        (if (not hit)
            node
            (let* ((old-node (aref array index))

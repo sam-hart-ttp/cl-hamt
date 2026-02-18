@@ -65,6 +65,15 @@
           (,hit (logbitp ,bits ,bitmap)))
      ,@body))
 
+(defmacro with-typed-table (node hash depth
+                            (bitmap array bits index hit)
+                            &body body)
+  `(with-table ,node ,hash ,depth (,bitmap ,array ,bits ,index ,hit)
+     (declare (type (unsigned-byte 64) ,bitmap)
+              (type simple-vector ,array)
+              (type fixnum ,bits ,index))
+     ,@body))
+
 (defmacro rewrite-table-update (table-constructor bitmap array index new-node)
   `(,table-constructor
     :bitmap ,bitmap

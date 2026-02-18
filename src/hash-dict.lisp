@@ -17,11 +17,8 @@
            (values (cdr key-val) t)
            (values nil nil))))
     (dict-table
-     (with-table node hash depth
+     (with-typed-table node hash depth
          (bitmap array bits index hit)
-       (declare (type (unsigned-byte 64) bitmap)
-                (type simple-vector array)
-                (type fixnum bits index))
        (if hit
            (%dict-lookup-node (aref array index) key hash (1+ depth) test)
            (values nil nil))))
@@ -73,11 +70,8 @@
              :hash hash
              :entries (cons (cons key value) entries))))))
     (dict-table
-     (with-table node hash depth
+     (with-typed-table node hash depth
          (bitmap array bits index hit)
-       (declare (type (unsigned-byte 64) bitmap)
-                (type simple-vector array)
-                (type fixnum bits index))
        (if hit
            (let* ((old-node (aref array index))
                   (new-node (%dict-insert-node old-node key value hash (1+ depth) test)))
@@ -122,11 +116,8 @@
              :hash hash
              :entries (nreverse kept))))))
     (dict-table
-     (with-table node hash depth
+     (with-typed-table node hash depth
          (bitmap array bits index hit)
-       (declare (type (unsigned-byte 64) bitmap)
-                (type simple-vector array)
-                (type fixnum bits index))
        (if (not hit)
            node
            (let* ((old-node (aref array index))
