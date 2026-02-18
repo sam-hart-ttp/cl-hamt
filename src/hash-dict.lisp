@@ -171,7 +171,7 @@ If HASH is not supplied, HASH-MODE chooses:
   :SECURE - SipHash-2-4 over canonical safe object bytes.
 If HASH is supplied, it must return an unsigned 64-bit integer."
   (let ((test-fn (coerce-test-function test)))
-    (validate-hash-test-compatibility test test-fn hash hash-mode)
+    (validate-hash-test-compatibility test test-fn hash)
     (make-instance 'hash-dict
                    :test test-fn
                    :hash (resolve-hash-function hash hash-mode))))
@@ -272,8 +272,7 @@ Optionally use new comparison and hash functions for the mapped dict."
 (defun dict-filter (predicate dict)
   "Return a new dict consisting of the key/value pairs satisfying the
 given predicate."
-  (with-hamt dict (:test test :hash hash :table table)
-    (declare (ignore table))
+  (with-hamt dict (:test test :hash hash)
     (make-instance
      'hash-dict
      :test test

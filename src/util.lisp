@@ -18,7 +18,7 @@
 
 (declaim (inline get-bits get-index vec-insert vec-remove vec-update))
 
-(declaim (inline %u32 %u64 %rotl32 %rotl64))
+(declaim (inline %u32 %u64 %rotl64))
 
 (defun %u32 (x)
   (ldb (byte 32 0) x))
@@ -33,12 +33,6 @@
 (defparameter *siphash-k0* (%random-u64 *siphash-random-state*))
 (defparameter *siphash-k1* (%random-u64 *siphash-random-state*))
 (declaim (type (unsigned-byte 64) *siphash-k0* *siphash-k1*))
-
-(defun %rotl32 (x r)
-  (declare (type (unsigned-byte 32) x)
-           (type fixnum r))
-  (%u32 (logior (ash x r)
-                (ash x (- r 32)))))
 
 (defun %rotl64 (x r)
   (declare (type (unsigned-byte 64) x)
@@ -390,8 +384,7 @@ or circular structures."
       (eq test-fn #'eql)
       (eq test-fn #'equal)))
 
-(defun validate-hash-test-compatibility (test test-fn hash hash-mode)
-  (declare (ignore hash-mode))
+(defun validate-hash-test-compatibility (test test-fn hash)
   (when (and (null hash)
              (not (default-hash-test-compatible-p test test-fn)))
     (error "Default hash modes are intentionally restricted to TEST EQ, EQL, or EQUAL. Supply explicit :HASH to override (TEST=~S)."

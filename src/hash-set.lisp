@@ -133,7 +133,7 @@ If HASH is not supplied, HASH-MODE chooses:
   :SECURE - SipHash-2-4 over canonical safe object bytes.
 If HASH is supplied, it must return an unsigned 64-bit integer."
   (let ((test-fn (coerce-test-function test)))
-    (validate-hash-test-compatibility test test-fn hash hash-mode)
+    (validate-hash-test-compatibility test test-fn hash)
     (make-instance 'hash-set
                    :test test-fn
                    :hash (resolve-hash-function hash hash-mode))))
@@ -202,8 +202,7 @@ comparison and hash functions for the mapped set."
 
 (defun set-filter (predicate set)
   "Return the elements of the set satisfying a given predicate."
-  (with-hamt set (:test test :hash hash :table table)
-    (declare (ignore table))
+  (with-hamt set (:test test :hash hash)
     (make-instance
      'hash-set
      :test test

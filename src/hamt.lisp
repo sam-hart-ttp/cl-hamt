@@ -43,11 +43,16 @@
 
 (defmacro with-hamt (hamt (&key test hash table) &body body)
   "Accessing HAMT slots"
-  `(with-accessors ((,test hamt-test)
-                    (,hash hamt-hash)
-                    (,table hamt-table))
-       ,hamt
-     ,@body))
+  (let ((bindings '()))
+    (when test
+      (push `(,test hamt-test) bindings))
+    (when hash
+      (push `(,hash hamt-hash) bindings))
+    (when table
+      (push `(,table hamt-table) bindings))
+    `(with-accessors ,(nreverse bindings)
+         ,hamt
+       ,@body)))
 
 (defmacro with-table (node hash depth
                       (bitmap array bits index hit)
