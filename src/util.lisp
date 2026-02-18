@@ -158,21 +158,27 @@
   "Serialize OBJ into tagged canonical octets without invoking print-object."
   (declare (optimize (speed 3) (safety 0) (debug 0)))
   (let ((buffer (%octet-buffer))
-        (seen (make-hash-table :test #'eq)))
+        (seen nil))
     (declare (type (vector (unsigned-byte 8)) buffer))
-    (labels ((visit (x)
+    (labels ((track (x)
+               (unless seen
+                 (setf seen (make-hash-table :test #'eq)))
+               (when (gethash x seen)
+                 (error "SECURE hash does not support circular structures (type ~S)."
+                        (type-of x)))
+               (setf (gethash x seen) t))
+             (untrack (x)
+               (remhash x seen))
+             (visit (x)
                (typecase x
                  (null
                   (%emit-u8 buffer 0))
                  (cons
-                 (when (gethash x seen)
-                    (error "SECURE hash does not support circular cons structures (type ~S)."
-                           (type-of x)))
-                  (setf (gethash x seen) t)
+                  (track x)
                   (%emit-u8 buffer 1)
                   (visit (car x))
                   (visit (cdr x))
-                  (remhash x seen))
+                  (untrack x))
                  (integer
                   (%emit-u8 buffer 2)
                   (%emit-integer buffer x))
