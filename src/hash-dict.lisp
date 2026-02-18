@@ -171,7 +171,7 @@ The multiple return is necessary in case a key is present but maps to nil."
 
 (defun dict-size (dict)
   "Return the number of key/value pairs in the dict"
-  (%hamt-size (hamt-table dict)))
+  (%dict-size-node (hamt-table dict)))
 
 (defun dict-insert (dict &rest args)
   "Return a new dictionary with the key/value pairs added. The key/value
@@ -218,7 +218,7 @@ where `A` is the type of the initial-value, `K` is the type of the dict
 keys and `V` is the type of dictionary values.
 Note that HAMTs do not store items in any order, so the reduction operation
 cannot be sensitive to the order in which the items are reduced."
-  (%hamt-reduce func (hamt-table dict) initial-value))
+  (%dict-reduce-node func (hamt-table dict) initial-value))
 
 (defun dict-map-values (func dict
                         &key

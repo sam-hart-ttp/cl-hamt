@@ -3,26 +3,30 @@
 
 ;; Internal HAMT nodes are represented as structs for cheaper allocation and
 ;; access in hot paths. Public wrapper types (hash-set/hash-dict) remain CLOS.
-(defstruct (set-leaf (:constructor make-set-leaf (&key key)))
+;; Base types per family enable fast (typep x 'set-node) narrowing.
+(defstruct set-node)
+(defstruct dict-node)
+
+(defstruct (set-leaf (:include set-node) (:constructor make-set-leaf (&key key)))
   key)
 
-(defstruct (set-conflict (:constructor make-set-conflict (&key hash entries)))
+(defstruct (set-conflict (:include set-node) (:constructor make-set-conflict (&key hash entries)))
   hash
   (entries '()))
 
-(defstruct (set-table (:constructor make-set-table (&key (bitmap 0) (table (make-array 0)))))
+(defstruct (set-table (:include set-node) (:constructor make-set-table (&key (bitmap 0) (table (make-array 0)))))
   (bitmap 0 :type (unsigned-byte 64))
   (table (make-array 0) :type simple-vector))
 
-(defstruct (dict-leaf (:constructor make-dict-leaf (&key key value)))
+(defstruct (dict-leaf (:include dict-node) (:constructor make-dict-leaf (&key key value)))
   key
   value)
 
-(defstruct (dict-conflict (:constructor make-dict-conflict (&key hash entries)))
+(defstruct (dict-conflict (:include dict-node) (:constructor make-dict-conflict (&key hash entries)))
   hash
   (entries '()))
 
-(defstruct (dict-table (:constructor make-dict-table (&key (bitmap 0) (table (make-array 0)))))
+(defstruct (dict-table (:include dict-node) (:constructor make-dict-table (&key (bitmap 0) (table (make-array 0)))))
   (bitmap 0 :type (unsigned-byte 64))
   (table (make-array 0) :type simple-vector))
 
@@ -165,27 +169,46 @@ Short-circuits after the first match so duplicate entries are preserved."
     (t #())))
 
 
-;; Getting the size of a HAMT
-(defun %hamt-size (node)
+;; Getting the size of a HAMT — typed per family to avoid 6-way dispatch.
+(defun %set-size-node (node)
   (typecase node
-    ((or set-leaf dict-leaf) 1)
-    ((or set-conflict dict-conflict)
-     (length (conflict-entries node)))
-    ((or set-table dict-table)
-     (loop for child across (table-array node)
-           sum (%hamt-size child)))
+    (set-leaf 1)
+    (set-conflict
+     (length (set-conflict-entries node)))
+    (set-table
+     (loop for child across (set-table-table node)
+           sum (%set-size-node child)))
+    (t 0)))
+
+(defun %dict-size-node (node)
+  (typecase node
+    (dict-leaf 1)
+    (dict-conflict
+     (length (dict-conflict-entries node)))
+    (dict-table
+     (loop for child across (dict-table-table node)
+           sum (%dict-size-node child)))
     (t 0)))
 
 
-;; Reducing over a HAMT is the same for table nodes of sets and dicts
-(defun %hamt-reduce (func node initial-value)
+;; Reducing over a HAMT — typed per family to avoid 6-way dispatch.
+(defun %set-reduce-node (func node initial-value)
   (typecase node
     (set-leaf
      (funcall func initial-value (set-leaf-key node)))
-    (dict-leaf
-     (funcall func initial-value (dict-leaf-key node) (dict-leaf-value node)))
     (set-conflict
      (reduce func (set-conflict-entries node) :initial-value initial-value))
+    (set-table
+     (reduce (lambda (r child)
+               (%set-reduce-node func child r))
+             (set-table-table node)
+             :initial-value initial-value))
+    (t initial-value)))
+
+(defun %dict-reduce-node (func node initial-value)
+  (typecase node
+    (dict-leaf
+     (funcall func initial-value (dict-leaf-key node) (dict-leaf-value node)))
     (dict-conflict
      (labels ((f (alist r)
                 (if alist
@@ -193,10 +216,10 @@ Short-circuits after the first match so duplicate entries are preserved."
                        (funcall func r (caar alist) (cdar alist)))
                     r)))
        (f (dict-conflict-entries node) initial-value)))
-    ((or set-table dict-table)
+    (dict-table
      (reduce (lambda (r child)
-               (%hamt-reduce func child r))
-             (table-array node)
+               (%dict-reduce-node func child r))
+             (dict-table-table node)
              :initial-value initial-value))
     (t initial-value)))
 

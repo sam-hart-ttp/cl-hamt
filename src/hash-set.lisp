@@ -130,7 +130,7 @@ If HASH is supplied, it must return an unsigned 64-bit integer."
 
 (defun set-size (set)
   "Return the size of the set"
-  (%hamt-size (hamt-table set)))
+  (%set-size-node (hamt-table set)))
 
 (defun set-insert (set &rest xs)
   "Return a new set with the elements xs added to it. Elements already in
@@ -161,7 +161,7 @@ assumed to have the signature
 where A is the type of `initial-value` and `B` is the type of set elements.
 Note that HAMTs do not store items in any order, so the reduction operation
 cannot be sensitive to the order in which the items are reduced."
-  (%hamt-reduce func (hamt-table set) initial-value))
+  (%set-reduce-node func (hamt-table set) initial-value))
 
 (defun set-map (func set
                 &key
