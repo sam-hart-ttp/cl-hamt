@@ -72,15 +72,8 @@
      (unless (funcall test key (node-key node))
        node))
     (set-conflict
-     (let ((kept '())
-           (kept-count 0)
-           (removed nil))
-       (dolist (entry (conflict-entries node))
-         (if (funcall test key entry)
-             (setf removed t)
-             (progn
-               (incf kept-count)
-               (push entry kept))))
+     (with-conflict-removal-scan ((conflict-entries node) entry (funcall test key entry))
+         (kept kept-count removed)
        (cond
          ((not removed) node)
          ((= kept-count 1)

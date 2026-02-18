@@ -82,6 +82,20 @@
         :bitmap (logxor ,bitmap (ash 1 ,bits))
         :table (vec-remove ,array ,index))))
 
+(defmacro with-conflict-removal-scan ((entries entry matches-p)
+                                      (kept kept-count removed)
+                                      &body body)
+  `(let ((,kept '())
+         (,kept-count 0)
+         (,removed nil))
+     (dolist (,entry ,entries)
+       (if ,matches-p
+           (setf ,removed t)
+           (progn
+             (incf ,kept-count)
+             (push ,entry ,kept))))
+     ,@body))
+
 (declaim (inline node-key node-value conflict-hash conflict-entries table-bitmap table-array))
 
 (defun node-key (node)

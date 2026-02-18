@@ -109,15 +109,9 @@
     ;; collision. If there is now only 1 key with the given hash, we can
     ;; return a dict-leaf, since there is no longer a collision.
     (dict-conflict
-     (let ((kept '())
-           (kept-count 0)
-           (removed nil))
-       (dolist (entry (conflict-entries node))
-         (if (funcall test (car entry) key)
-             (setf removed t)
-             (progn
-               (incf kept-count)
-               (push entry kept))))
+     (with-conflict-removal-scan ((conflict-entries node) entry
+                                  (funcall test (car entry) key))
+         (kept kept-count removed)
        (cond
          ((not removed) node)
          ((= kept-count 1)
