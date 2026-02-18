@@ -61,16 +61,30 @@
 ;; Inserting into a conflict node either updates the value associated to an
 ;; existing key, or expands the scope of the conflict
 (defmethod %dict-insert ((node dict-conflict) key value hash depth test)
+  (declare (ignore depth))
   (let ((entries (conflict-entries node)))
-    (make-instance 'dict-conflict
-                   :hash hash
-                   :entries (if (assoc key entries :test test)
-                                (mapcar (lambda (kv)
-                                          (if (funcall test (car kv) key)
-                                              (cons key value)
-                                              (cons (car kv) (cdr kv))))
-                                        entries)
-                                (acons key value entries)))))
+    (let ((updated '())
+          (found nil)
+          (changed nil))
+      (dolist (kv entries)
+        (if (funcall test (car kv) key)
+            (progn
+              (setf found t)
+              (if (eq (cdr kv) value)
+                  (push kv updated)
+                  (progn
+                    (setf changed t)
+                    (push (cons key value) updated))))
+            (push kv updated)))
+      (cond
+        ((and found (not changed)) node)
+        (found
+         (make-instance 'dict-conflict
+                        :hash hash
+                        :entries (nreverse updated)))
+        (t (make-instance 'dict-conflict
+                          :hash hash
+                          :entries (cons (cons key value) entries)))))))
 
 (defmethod %dict-insert ((node dict-table) key value hash depth test)
   (with-table node hash depth
@@ -100,21 +114,29 @@
 ;; Removing entries from dictionaries.
 ;; Most of the functionality is contained in the file hamt.lisp.
 
-(defun alist-remove (key alist test)
-  (remove key alist :test (lambda (k p) (funcall test (car p) k))))
-
 ;; Removing an entry from a conflict node reduces the scope of the hash
 ;; collision. If there is now only 1 key with the given hash, we can
 ;; return a dict-leaf, since there is no longer a collision.
 (defmethod %hamt-remove ((node dict-conflict) key hash depth test)
-  (let ((entries (alist-remove key (conflict-entries node) test)))
-    (if (= (length entries) 1)
-        (make-instance 'dict-leaf
-                       :key (caar entries)
-                       :value (cdar entries))
-        (make-instance 'dict-conflict
-                       :hash hash
-                       :entries entries))))
+  (declare (ignore depth))
+  (let ((kept '())
+        (kept-count 0)
+        (removed nil))
+    (dolist (entry (conflict-entries node))
+      (if (funcall test (car entry) key)
+          (setf removed t)
+          (progn
+            (incf kept-count)
+            (push entry kept))))
+    (cond
+      ((not removed) node)
+      ((= kept-count 1)
+       (make-instance 'dict-leaf
+                      :key (caar kept)
+                      :value (cdar kept)))
+      (t (make-instance 'dict-conflict
+                        :hash hash
+                        :entries (nreverse kept))))))
 
 
 

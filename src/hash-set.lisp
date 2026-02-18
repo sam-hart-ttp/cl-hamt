@@ -40,12 +40,13 @@
                        :entries (list key nkey)))))
 
 (defmethod %set-insert ((node set-conflict) key hash depth test)
+  (declare (ignore depth))
   (let ((entries (conflict-entries node)))
-    (make-instance 'set-conflict
-                   :hash hash
-                   :entries (if (member key entries :test test)
-                                entries
-                                (cons key entries)))))
+    (if (member key entries :test test)
+        node
+        (make-instance 'set-conflict
+                       :hash hash
+                       :entries (cons key entries)))))
 
 (defmethod %set-insert ((node set-table) key hash depth test)
   (with-table node hash depth
@@ -71,13 +72,24 @@
 
 ;; Methods for removing items from a hash-set
 (defmethod %hamt-remove ((node set-conflict) key hash depth test)
-  (let ((entries (remove key (conflict-entries node) :test test)))
-    (if (= (length entries) 1)
-        (make-instance 'set-leaf
-                       :key (car entries))
-        (make-instance 'set-conflict
-                       :hash hash
-                       :entries entries))))
+  (declare (ignore depth))
+  (let ((kept '())
+        (kept-count 0)
+        (removed nil))
+    (dolist (entry (conflict-entries node))
+      (if (funcall test key entry)
+          (setf removed t)
+          (progn
+            (incf kept-count)
+            (push entry kept))))
+    (cond
+      ((not removed) node)
+      ((= kept-count 1)
+       (make-instance 'set-leaf
+                      :key (car kept)))
+      (t (make-instance 'set-conflict
+                        :hash hash
+                        :entries (nreverse kept))))))
 
 
 
