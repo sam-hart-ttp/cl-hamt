@@ -60,7 +60,11 @@
                        81)))
 
 
-;; These pairs of strings hash to the same number under murmurhash.
+;; We force collisions with a constant hash function to test conflict handling.
+(defun collision-hash (x)
+  (declare (ignore x))
+  0)
+
 (defvar some-word-collisions
   '(("PSYCHOANALYZE" . "BEDUCKS")
     ("PANSPERMIES" . "NONSELF")
@@ -71,7 +75,7 @@
             (set-insert s (car p) (cdr p)))
           some-word-collisions
           :initial-value (empty-set :test #'equal
-                                    :hash #'cl-murmurhash:murmurhash)))
+                                    :hash #'collision-hash)))
 
 (test collisions
   (is (equal 6 (set-size set-with-collisions)))
@@ -99,7 +103,7 @@
             (set-insert s (car p)))
           some-word-collisions
           :initial-value (empty-set :test #'equal
-                                    :hash #'cl-murmurhash:murmurhash)))
+                                    :hash #'collision-hash)))
 
 (test set-equality
   (is-false (set-eq swinging-hepcats beboppers))

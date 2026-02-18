@@ -48,7 +48,11 @@
                   (not (dict-lookup fewer-squares 4))))))
 
 
-;; These pairs of strings hash to the same number under murmurhash.
+;; We force collisions with a constant hash function to test conflict handling.
+(defun dict-collision-hash (x)
+  (declare (ignore x))
+  0)
+
 (defvar some-word-collisions
   '(("PSYCHOANALYZE" . "BEDUCKS")
     ("PANSPERMIES" . "NONSELF")
@@ -66,7 +70,7 @@
                       (cdr word-pairs)))
                  dict)))
     (f (empty-dict :test #'equal
-                   :hash #'cl-murmurhash:murmurhash)
+                   :hash #'dict-collision-hash)
        some-word-collisions)))
 
 (test collisions
