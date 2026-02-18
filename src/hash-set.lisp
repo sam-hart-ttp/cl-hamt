@@ -6,102 +6,120 @@
 (defclass set-table (table) ())
 
 
-
-;; Methods for looking up whether items are contained in the set
-(defmethod %hamt-lookup ((node set-leaf) key hash depth test)
-  (declare (ignore hash depth))
-  (funcall test (node-key node) key))
-
-(defmethod %hamt-lookup ((node set-table) key hash depth test)
+(defun %set-lookup-node (node key hash depth test)
   (declare (optimize (speed 3) (safety 0) (debug 0))
            (type (unsigned-byte 32) hash)
            (type fixnum depth))
-  (with-table node hash depth
-      (bitmap array bits index hit)
-    (declare (type (unsigned-byte 32) bitmap)
-             (type simple-vector array)
-             (type fixnum bits index))
-    (when hit
-      (%hamt-lookup (aref array index) key hash (1+ depth) test))))
-
-(defmethod %hamt-lookup ((node set-conflict) key hash depth test)
-  (declare (ignore hash depth))
-  (member key (conflict-entries node) :test test))
-
-
-
-;; Methods for inserting items into the set
-(defgeneric %set-insert (node key hash depth test))
+  (typecase node
+    (set-leaf
+     (funcall test (node-key node) key))
+    (set-conflict
+     (member key (conflict-entries node) :test test))
+    (set-table
+     (with-table node hash depth
+         (bitmap array bits index hit)
+       (declare (type (unsigned-byte 32) bitmap)
+                (type simple-vector array)
+                (type fixnum bits index))
+       (when hit
+         (%set-lookup-node (aref array index) key hash (1+ depth) test))))
+    (t nil)))
 
 ;; Adding a new element to a leaf node either returns the leaf node if that
 ;; item was already present in the set, or creates a conflict node if there
 ;; was a hash collision.
-(defmethod %set-insert ((node set-leaf) key hash depth test)
-  (declare (ignore depth))
-  (let ((nkey (node-key node)))
-    (if (funcall test key nkey)
-        node
-        (make-instance 'set-conflict
-                       :hash hash
-                       :entries (list key nkey)))))
-
-(defmethod %set-insert ((node set-conflict) key hash depth test)
-  (declare (ignore depth))
-  (let ((entries (conflict-entries node)))
-    (if (member key entries :test test)
-        node
-        (make-instance 'set-conflict
-                       :hash hash
-                       :entries (cons key entries)))))
-
-(defmethod %set-insert ((node set-table) key hash depth test)
+(defun %set-insert-node (node key hash depth test)
   (declare (optimize (speed 3) (safety 0) (debug 0))
            (type (unsigned-byte 32) hash)
            (type fixnum depth))
-  (with-table node hash depth
-      (bitmap array bits index hit)
-    (declare (type (unsigned-byte 32) bitmap)
-             (type simple-vector array)
-             (type fixnum bits index))
-    (flet ((%insert (table)
-             (%set-insert table key hash (1+ depth) test)))
-      (if hit
-          (let* ((old-node (aref array index))
-                 (new-node (%insert old-node)))
-            (if (eq new-node old-node)
-                node
+  (typecase node
+    (set-leaf
+     (let ((nkey (node-key node)))
+       (if (funcall test key nkey)
+           node
+           (make-instance 'set-conflict
+                          :hash hash
+                          :entries (list key nkey)))))
+    (set-conflict
+     (let ((entries (conflict-entries node)))
+       (if (member key entries :test test)
+           node
+           (make-instance 'set-conflict
+                          :hash hash
+                          :entries (cons key entries)))))
+    (set-table
+     (with-table node hash depth
+         (bitmap array bits index hit)
+       (declare (type (unsigned-byte 32) bitmap)
+                (type simple-vector array)
+                (type fixnum bits index))
+       (if hit
+           (let* ((old-node (aref array index))
+                  (new-node (%set-insert-node old-node key hash (1+ depth) test)))
+             (if (eq new-node old-node)
+                 node
+                 (make-instance 'set-table
+                                :bitmap bitmap
+                                :table (vec-update array index new-node))))
+           (let ((new-node (if (= depth 6)
+                               (make-instance 'set-leaf :key key)
+                               (%set-insert-node (make-instance 'set-table)
+                                                 key
+                                                 hash
+                                                 (1+ depth)
+                                                 test))))
+             (make-instance 'set-table
+                            :bitmap (logior bitmap (ash 1 bits))
+                            :table (vec-insert array index new-node))))))
+    (t node)))
+
+(defun %set-remove-node (node key hash depth test)
+  (declare (optimize (speed 3) (safety 0) (debug 0))
+           (type (unsigned-byte 32) hash)
+           (type fixnum depth))
+  (typecase node
+    (set-leaf
+     (unless (funcall test key (node-key node))
+       node))
+    (set-conflict
+     (let ((kept '())
+           (kept-count 0)
+           (removed nil))
+       (dolist (entry (conflict-entries node))
+         (if (funcall test key entry)
+             (setf removed t)
+             (progn
+               (incf kept-count)
+               (push entry kept))))
+       (cond
+         ((not removed) node)
+         ((= kept-count 1)
+          (make-instance 'set-leaf
+                         :key (car kept)))
+         (t (make-instance 'set-conflict
+                           :hash hash
+                           :entries (nreverse kept))))))
+    (set-table
+     (with-table node hash depth
+         (bitmap array bits index hit)
+       (declare (type (unsigned-byte 32) bitmap)
+                (type simple-vector array)
+                (type fixnum bits index))
+       (if (not hit)
+           node
+           (let* ((old-node (aref array index))
+                  (new-node (%set-remove-node old-node key hash (1+ depth) test)))
+             (cond
+               ((eq new-node old-node) node)
+               (new-node
                 (make-instance 'set-table
                                :bitmap bitmap
-                               :table (vec-update array index new-node))))
-          (let ((new-node (if (= depth 6)
-                              (make-instance 'set-leaf :key key)
-                              (%insert (make-instance 'set-table)))))
-            (make-instance 'set-table
-                           :bitmap (logior bitmap (ash 1 bits))
-                           :table (vec-insert array index new-node)))))))
-
-
-
-;; Methods for removing items from a hash-set
-(defmethod %hamt-remove ((node set-conflict) key hash depth test)
-  (declare (ignore depth))
-  (let ((kept '())
-        (kept-count 0)
-        (removed nil))
-    (dolist (entry (conflict-entries node))
-      (if (funcall test key entry)
-          (setf removed t)
-          (progn
-            (incf kept-count)
-            (push entry kept))))
-    (cond
-      ((not removed) node)
-      ((= kept-count 1)
-       (make-instance 'set-leaf
-                      :key (car kept)))
-      (t (make-instance 'set-conflict
-                        :hash hash
-                        :entries (nreverse kept))))))
+                               :table (vec-update array index new-node)))
+               ((= bitmap 1) nil)
+               (t (make-instance 'set-table
+                                 :bitmap (logxor bitmap (ash 1 bits))
+                                 :table (vec-remove array index))))))))
+    (t node)))
 
 
 
@@ -135,7 +153,7 @@ with the supplied test and hash functions. The hash must be a 32-bit hash."
 (defun set-lookup (set x)
   "Return true if the object x is in the set, false otherwise"
   (with-hamt set (:test test :hash hash :table table)
-    (%hamt-lookup table x (funcall hash x) 0 test)))
+    (%set-lookup-node table x (funcall hash x) 0 test)))
 
 (defun set-size (set)
   "Return the size of the set"
@@ -146,7 +164,7 @@ with the supplied test and hash functions. The hash must be a 32-bit hash."
 the set are ignored."
   (with-hamt set (:test test :hash hash :table table)
     (flet ((%insert (table x)
-             (%set-insert table x (funcall hash x) 0 test)))
+             (%set-insert-node table x (funcall hash x) 0 test)))
       (make-instance 'hash-set
                      :test test
                      :hash hash
@@ -157,7 +175,7 @@ the set are ignored."
 xs is not in the set, it is ignored."
   (with-hamt set (:test test :hash hash :table table)
     (flet ((%remove (table x)
-             (%hamt-remove table x (funcall hash x) 0 test)))
+             (%set-remove-node table x (funcall hash x) 0 test)))
       (make-instance 'hash-set
                      :test test
                      :hash hash
@@ -186,11 +204,11 @@ comparison and hash functions for the mapped set."
      :hash mapped-hash
      :table (set-reduce (lambda (mapped-table x)
                           (let ((y (funcall func x)))
-                            (%set-insert mapped-table
-                                         y
-                                         (funcall mapped-hash y)
-                                         0
-                                         mapped-test)))
+                            (%set-insert-node mapped-table
+                                              y
+                                              (funcall mapped-hash y)
+                                              0
+                                              mapped-test)))
                         set
                         (make-instance 'set-table
                                        :bitmap 0
@@ -206,11 +224,11 @@ comparison and hash functions for the mapped set."
      :hash hash
      :table (set-reduce (lambda (filtered-table x)
                           (if (funcall predicate x)
-                              (%set-insert filtered-table
-                                           x
-                                           (funcall hash x)
-                                           0
-                                           test)
+                              (%set-insert-node filtered-table
+                                                x
+                                                (funcall hash x)
+                                                0
+                                                test)
                               filtered-table))
                         set
                         (make-instance 'set-table

@@ -14,141 +14,158 @@
 (defclass dict-table (table) ())
 
 
-
-;; Methods for looking up key/value pairs in a dict
-(defmethod %hamt-lookup ((node dict-leaf) key hash depth test)
-  (if (funcall test (node-key node) key)
-      (values (node-value node) t)
-      (values nil nil)))
-
-(defmethod %hamt-lookup ((node dict-table) key hash depth test)
+;; Lookup/insert/remove use explicit node walking to avoid recursive generic
+;; dispatch in hot paths.
+(defun %dict-lookup-node (node key hash depth test)
   (declare (optimize (speed 3) (safety 0) (debug 0))
            (type (unsigned-byte 32) hash)
            (type fixnum depth))
-  (with-table node hash depth
-      (bitmap array bits index hit)
-    (declare (type (unsigned-byte 32) bitmap)
-             (type simple-vector array)
-             (type fixnum bits index))
-    (if hit
-        (%hamt-lookup (aref array index) key hash (1+ depth) test)
-        (values nil nil))))
-
-(defmethod %hamt-lookup ((node dict-conflict) key hash depth test)
-  (declare (ignore hash depth))
-  (let ((key-val (assoc key (conflict-entries node) :test test)))
-    (if key-val
-        (values (cdr key-val) t)
-        (values nil nil))))
-
-
-
-;; Methods for inserting key/value pairs into a dict
-(defgeneric %dict-insert (node key value hash depth test))
+  (typecase node
+    (dict-leaf
+     (if (funcall test (node-key node) key)
+         (values (node-value node) t)
+         (values nil nil)))
+    (dict-conflict
+     (let ((key-val (assoc key (conflict-entries node) :test test)))
+       (if key-val
+           (values (cdr key-val) t)
+           (values nil nil))))
+    (dict-table
+     (with-table node hash depth
+         (bitmap array bits index hit)
+       (declare (type (unsigned-byte 32) bitmap)
+                (type simple-vector array)
+                (type fixnum bits index))
+       (if hit
+           (%dict-lookup-node (aref array index) key hash (1+ depth) test)
+           (values nil nil))))
+    (t (values nil nil))))
 
 ;; Inserting into a leaf either functionally updates the value stored in the
 ;; current node if the keys match, or creates a conflict node if the keys do
 ;; not match but their hashes do.
-(defmethod %dict-insert ((node dict-leaf) key value hash depth test)
-  (declare (ignore depth))
-  (let ((nkey (node-key node)))
-    (if (funcall test key nkey)
-        (make-instance 'dict-leaf
-                       :key key
-                       :value value)
-        (make-instance 'dict-conflict
-                       :hash hash
-                       :entries (acons key
-                                       value
-                                       (acons nkey
-                                              (node-value node)
-                                              '()))))))
-
-;; Inserting into a conflict node either updates the value associated to an
-;; existing key, or expands the scope of the conflict
-(defmethod %dict-insert ((node dict-conflict) key value hash depth test)
-  (declare (ignore depth))
-  (let ((entries (conflict-entries node)))
-    (let ((updated '())
-          (found nil)
-          (changed nil))
-      (dolist (kv entries)
-        (if (funcall test (car kv) key)
-            (progn
-              (setf found t)
-              (if (eq (cdr kv) value)
-                  (push kv updated)
-                  (progn
-                    (setf changed t)
-                    (push (cons key value) updated))))
-            (push kv updated)))
-      (cond
-        ((and found (not changed)) node)
-        (found
-         (make-instance 'dict-conflict
-                        :hash hash
-                        :entries (nreverse updated)))
-        (t (make-instance 'dict-conflict
-                          :hash hash
-                          :entries (cons (cons key value) entries)))))))
-
-(defmethod %dict-insert ((node dict-table) key value hash depth test)
+(defun %dict-insert-node (node key value hash depth test)
   (declare (optimize (speed 3) (safety 0) (debug 0))
            (type (unsigned-byte 32) hash)
            (type fixnum depth))
-  (with-table node hash depth
-      (bitmap array bits index hit)
-    (declare (type (unsigned-byte 32) bitmap)
-             (type simple-vector array)
-             (type fixnum bits index))
-    (flet ((%insert (table)
-             (%dict-insert table key value hash (1+ depth) test)))
-      (if hit
-          (let* ((old-node (aref array index))
-                 (new-node (%insert old-node)))
-            (if (eq new-node old-node)
-                node
+  (typecase node
+    (dict-leaf
+     (let ((nkey (node-key node)))
+       (if (funcall test key nkey)
+           (make-instance 'dict-leaf
+                          :key key
+                          :value value)
+           (make-instance 'dict-conflict
+                          :hash hash
+                          :entries (acons key
+                                          value
+                                          (acons nkey
+                                                 (node-value node)
+                                                 '()))))))
+    (dict-conflict
+     (let ((entries (conflict-entries node))
+           (updated '())
+           (found nil)
+           (changed nil))
+       (dolist (kv entries)
+         (if (funcall test (car kv) key)
+             (progn
+               (setf found t)
+               (if (eq (cdr kv) value)
+                   (push kv updated)
+                   (progn
+                     (setf changed t)
+                     (push (cons key value) updated))))
+             (push kv updated)))
+       (cond
+         ((and found (not changed)) node)
+         (found
+          (make-instance 'dict-conflict
+                         :hash hash
+                         :entries (nreverse updated)))
+         (t (make-instance 'dict-conflict
+                           :hash hash
+                           :entries (cons (cons key value) entries))))))
+    (dict-table
+     (with-table node hash depth
+         (bitmap array bits index hit)
+       (declare (type (unsigned-byte 32) bitmap)
+                (type simple-vector array)
+                (type fixnum bits index))
+       (if hit
+           (let* ((old-node (aref array index))
+                  (new-node (%dict-insert-node old-node key value hash (1+ depth) test)))
+             (if (eq new-node old-node)
+                 node
+                 (make-instance 'dict-table
+                                :bitmap bitmap
+                                :table (vec-update array index new-node))))
+           (let ((new-node (if (= depth 6)
+                               (make-instance 'dict-leaf
+                                              :key key
+                                              :value value)
+                               (%dict-insert-node (make-instance 'dict-table)
+                                                  key
+                                                  value
+                                                  hash
+                                                  (1+ depth)
+                                                  test))))
+             (make-instance 'dict-table
+                            :bitmap (logior bitmap (ash 1 bits))
+                            :table (vec-insert array index new-node))))))
+    (t node)))
+
+(defun %dict-remove-node (node key hash depth test)
+  (declare (optimize (speed 3) (safety 0) (debug 0))
+           (type (unsigned-byte 32) hash)
+           (type fixnum depth))
+  (typecase node
+    (dict-leaf
+     (unless (funcall test key (node-key node))
+       node))
+    ;; Removing an entry from a conflict node reduces the scope of the hash
+    ;; collision. If there is now only 1 key with the given hash, we can
+    ;; return a dict-leaf, since there is no longer a collision.
+    (dict-conflict
+     (let ((kept '())
+           (kept-count 0)
+           (removed nil))
+       (dolist (entry (conflict-entries node))
+         (if (funcall test (car entry) key)
+             (setf removed t)
+             (progn
+               (incf kept-count)
+               (push entry kept))))
+       (cond
+         ((not removed) node)
+         ((= kept-count 1)
+          (make-instance 'dict-leaf
+                         :key (caar kept)
+                         :value (cdar kept)))
+         (t (make-instance 'dict-conflict
+                           :hash hash
+                           :entries (nreverse kept))))))
+    (dict-table
+     (with-table node hash depth
+         (bitmap array bits index hit)
+       (declare (type (unsigned-byte 32) bitmap)
+                (type simple-vector array)
+                (type fixnum bits index))
+       (if (not hit)
+           node
+           (let* ((old-node (aref array index))
+                  (new-node (%dict-remove-node old-node key hash (1+ depth) test)))
+             (cond
+               ((eq new-node old-node) node)
+               (new-node
                 (make-instance 'dict-table
                                :bitmap bitmap
-                               :table (vec-update array index new-node))))
-          (let ((new-node
-                  (if (= depth 6)
-                      (make-instance 'dict-leaf
-                                     :key key
-                                     :value value)
-                      (%insert (make-instance 'dict-table)))))
-            (make-instance 'dict-table
-                           :bitmap (logior bitmap (ash 1 bits))
-                           :table (vec-insert array index new-node)))))))
-
-
-
-;; Removing entries from dictionaries.
-;; Most of the functionality is contained in the file hamt.lisp.
-
-;; Removing an entry from a conflict node reduces the scope of the hash
-;; collision. If there is now only 1 key with the given hash, we can
-;; return a dict-leaf, since there is no longer a collision.
-(defmethod %hamt-remove ((node dict-conflict) key hash depth test)
-  (declare (ignore depth))
-  (let ((kept '())
-        (kept-count 0)
-        (removed nil))
-    (dolist (entry (conflict-entries node))
-      (if (funcall test (car entry) key)
-          (setf removed t)
-          (progn
-            (incf kept-count)
-            (push entry kept))))
-    (cond
-      ((not removed) node)
-      ((= kept-count 1)
-       (make-instance 'dict-leaf
-                      :key (caar kept)
-                      :value (cdar kept)))
-      (t (make-instance 'dict-conflict
-                        :hash hash
-                        :entries (nreverse kept))))))
+                               :table (vec-update array index new-node)))
+               ((= bitmap 1) nil)
+               (t (make-instance 'dict-table
+                                 :bitmap (logxor bitmap (ash 1 bits))
+                                 :table (vec-remove array index))))))))
+    (t node)))
 
 
 
@@ -189,7 +206,7 @@ with the supplied test and hash functions. The hash must be a 32-bit hash."
 whether or not the value is present in the dictionary.
 The multiple return is necessary in case a key is present but maps to nil."
   (with-hamt dict (:test test :hash hash :table table)
-    (%hamt-lookup table key (funcall hash key) 0 test)))
+    (%dict-lookup-node table key (funcall hash key) 0 test)))
 
 (defun dict-size (dict)
   "Return the number of key/value pairs in the dict"
@@ -204,7 +221,7 @@ If any of the keys are already present in the dict passed, they are mapped
 to the new values in the returned dict."
   (with-hamt dict (:test test :hash hash :table table)
     (flet ((%insert (table key value)
-             (%dict-insert table key value (funcall hash key) 0 test)))
+             (%dict-insert-node table key value (funcall hash key) 0 test)))
       (make-instance
        'hash-dict
        :test test
@@ -223,7 +240,7 @@ to the new values in the returned dict."
 already present in the dict are ignored."
   (with-hamt dict (:test test :hash hash :table table)
     (flet ((%remove (table key)
-             (%hamt-remove table key (funcall hash key) 0 test)))
+             (%dict-remove-node table key (funcall hash key) 0 test)))
       (make-instance 'hash-dict
                      :test test
                      :hash hash
@@ -249,12 +266,12 @@ Optionally use new comparison and hash functions for the mapped dict."
      :test mapped-test
      :hash mapped-hash
      :table (dict-reduce (lambda (mapped-table k v)
-                           (%dict-insert mapped-table
-                                         k
-                                         (funcall func v)
-                                         (funcall mapped-hash k)
-                                         0
-                                         mapped-test))
+                           (%dict-insert-node mapped-table
+                                              k
+                                              (funcall func v)
+                                              (funcall mapped-hash k)
+                                              0
+                                              mapped-test))
                          dict
                          (make-instance 'dict-table
                                         :bitmap 0
@@ -270,12 +287,12 @@ Optionally use new comparison and hash functions for the mapped dict."
      :hash mapped-hash
      :table (dict-reduce (lambda (mapped-table k v)
                            (let ((key (funcall func k)))
-                             (%dict-insert mapped-table
-                                           key
-                                           v
-                                           (funcall mapped-hash key)
-                                           0
-                                           mapped-test)))
+                             (%dict-insert-node mapped-table
+                                                key
+                                                v
+                                                (funcall mapped-hash key)
+                                                0
+                                                mapped-test)))
                          dict
                          (make-instance 'dict-table
                                         :bitmap 0
@@ -292,12 +309,12 @@ given predicate."
      :hash hash
      :table (dict-reduce (lambda (filtered-table k v)
                            (if (funcall predicate k v)
-                               (%dict-insert filtered-table
-                                             k
-                                             v
-                                             (funcall hash k)
-                                             0
-                                             test)
+                               (%dict-insert-node filtered-table
+                                                  k
+                                                  v
+                                                  (funcall hash k)
+                                                  0
+                                                  test)
                                filtered-table))
                          dict
                          (make-instance 'dict-table

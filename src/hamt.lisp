@@ -76,49 +76,6 @@
   (length (conflict-entries node)))
 
 
-;; Depending on whether the HAMT is a set or a dict, looking up an entry
-;; returns either a boolean or multiple values respectively, so we defer
-;; implementation to the respective classes.
-(defgeneric %hamt-lookup (node key hash depth test))
-
-
-;; Removing entries from HAMTs
-(defgeneric %hamt-remove (node key hash depth test))
-
-(defmethod %hamt-remove ((node leaf) key hash depth test)
-  (let ((nkey (node-key node)))
-    (unless (funcall test key nkey)
-      node)))
-
-;; Removing entries from a conflict node differs for sets and dicts
-
-;; Removing a key from a table node can mean updating its bitmap if there
-;; is nothing left in the corresponding branch.
-(defmethod %hamt-remove ((node table) key hash depth test)
-  (declare (optimize (speed 3) (safety 0) (debug 0))
-           (type (unsigned-byte 32) hash)
-           (type fixnum depth))
-  (with-table node hash depth
-      (bitmap array bits index hit)
-    (declare (type (unsigned-byte 32) bitmap)
-             (type simple-vector array)
-             (type fixnum bits index))
-    (if (not hit)
-        node
-        (let* ((old-node (aref array index))
-               (new-node (%hamt-remove old-node key hash (1+ depth) test)))
-          (cond
-            ((eq new-node old-node) node)
-            (new-node
-             (make-instance (type-of node)
-                            :bitmap bitmap
-                            :table (vec-update array index new-node)))
-            ((= bitmap 1) nil)
-            (t (make-instance (type-of node)
-                              :bitmap (logxor bitmap (ash 1 bits))
-                              :table (vec-remove array index))))))))
-
-
 ;; Reducing over a HAMT is the same for table nodes of sets and dicts
 (defmethod %hamt-reduce (func node initial-value))
 
