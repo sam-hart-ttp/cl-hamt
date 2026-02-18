@@ -99,9 +99,10 @@
       (bitmap array bits index hit)
     (if (not hit)
         node
-        (let ((new-node
-                (%hamt-remove (aref array index) key hash (1+ depth) test)))
+        (let* ((old-node (aref array index))
+               (new-node (%hamt-remove old-node key hash (1+ depth) test)))
           (cond
+            ((eq new-node old-node) node)
             (new-node
              (make-instance (type-of node)
                             :bitmap bitmap

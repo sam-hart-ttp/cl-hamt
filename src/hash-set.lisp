@@ -52,17 +52,20 @@
       (bitmap array bits index hit)
     (flet ((%insert (table)
              (%set-insert table key hash (1+ depth) test)))
-      (let ((new-node
-              (cond
-                (hit (%insert (aref array index)))
-                ((= depth 6) (make-instance 'set-leaf :key key))
-                (t (%insert (make-instance 'set-table))))))
-        (make-instance 'set-table
-                       :bitmap (logior bitmap (ash 1 bits))
-                       :table (funcall (if hit #'vec-update #'vec-insert)
-                                       array
-                                       index
-                                       new-node))))))
+      (if hit
+          (let* ((old-node (aref array index))
+                 (new-node (%insert old-node)))
+            (if (eq new-node old-node)
+                node
+                (make-instance 'set-table
+                               :bitmap bitmap
+                               :table (vec-update array index new-node))))
+          (let ((new-node (if (= depth 6)
+                              (make-instance 'set-leaf :key key)
+                              (%insert (make-instance 'set-table)))))
+            (make-instance 'set-table
+                           :bitmap (logior bitmap (ash 1 bits))
+                           :table (vec-insert array index new-node)))))))
 
 
 
@@ -151,22 +154,44 @@ cannot be sensitive to the order in which the items are reduced."
                   (hash nil hash-supplied-p))
   "Return the image of a set under a given function. Optionally use new
 comparison and hash functions for the mapped set."
-  (set-reduce (lambda (mapped-set x)
-                (set-insert mapped-set
-                            (funcall func x)))
-              set
-              (empty-set :test (if test-supplied-p test (hamt-test set))
-                         :hash (if hash-supplied-p hash (hamt-hash set)))))
+  (let ((mapped-test (if test-supplied-p test (hamt-test set)))
+        (mapped-hash (if hash-supplied-p hash (hamt-hash set))))
+    (make-instance
+     'hash-set
+     :test mapped-test
+     :hash mapped-hash
+     :table (set-reduce (lambda (mapped-table x)
+                          (let ((y (funcall func x)))
+                            (%set-insert mapped-table
+                                         y
+                                         (funcall mapped-hash y)
+                                         0
+                                         mapped-test)))
+                        set
+                        (make-instance 'set-table
+                                       :bitmap 0
+                                       :table (make-array 0))))))
 
 (defun set-filter (predicate set)
   "Return the elements of the set satisfying a given predicate."
-  (set-reduce (lambda (filtered-set x)
-                (if (funcall predicate x)
-                    (set-insert filtered-set x)
-                    filtered-set))
-              set
-              (empty-set :test (hamt-test set)
-                         :hash (hamt-hash set))))
+  (with-hamt set (:test test :hash hash :table table)
+    (declare (ignore table))
+    (make-instance
+     'hash-set
+     :test test
+     :hash hash
+     :table (set-reduce (lambda (filtered-table x)
+                          (if (funcall predicate x)
+                              (%set-insert filtered-table
+                                           x
+                                           (funcall hash x)
+                                           0
+                                           test)
+                              filtered-table))
+                        set
+                        (make-instance 'set-table
+                                       :bitmap 0
+                                       :table (make-array 0))))))
 
 (defun set->list (set)
   (set-reduce (lambda (lst x) (cons x lst))

@@ -13,34 +13,35 @@ the index in the current array corresponding to this bit sequence."
   (logcount (ldb (byte bits 0) bitmap)))
 
 (defun vec-insert (vec pos item)
-  (let* ((len (1+ (length vec)))
+  (declare (type simple-vector vec)
+           (type fixnum pos))
+  (let* ((old-len (length vec))
+         (len (1+ old-len))
          (v (make-array len)))
-    (loop for i below len do
-         (setf (aref v i)
-               (cond
-                 ((< i pos) (aref vec i))
-                 ((> i pos) (aref vec (1- i)))
-                 (t item))))
+    (declare (type fixnum old-len len)
+             (type simple-vector v))
+    (replace v vec :end1 pos :end2 pos)
+    (setf (svref v pos) item)
+    (replace v vec :start1 (1+ pos) :start2 pos)
     v))
 
 (defun vec-remove (vec pos)
-  (let* ((len (1- (length vec)))
+  (declare (type simple-vector vec)
+           (type fixnum pos))
+  (let* ((old-len (length vec))
+         (len (1- old-len))
          (v (make-array len)))
-    (loop for i below len do
-         (setf (aref v i)
-               (if (< i pos)
-                   (aref vec i)
-                   (aref vec (1+ i)))))
+    (declare (type fixnum old-len len)
+             (type simple-vector v))
+    (replace v vec :end1 pos :end2 pos)
+    (replace v vec :start1 pos :start2 (1+ pos))
     v))
 
 (defun vec-update (vec pos item)
-  (let* ((len (length vec))
-         (v (make-array len)))
-    (loop for i below len do
-         (setf (aref v i)
-               (if (= i pos)
-                   item
-                   (aref vec i))))
+  (declare (type simple-vector vec)
+           (type fixnum pos))
+  (let ((v (copy-seq vec)))
+    (declare (type simple-vector v))
+    (setf (svref v pos) item)
     v))
-
 

@@ -64,7 +64,7 @@
   (let ((entries (conflict-entries node)))
     (make-instance 'dict-conflict
                    :hash hash
-                   :entries (if (assoc key entries)
+                   :entries (if (assoc key entries :test test)
                                 (mapcar (lambda (kv)
                                           (if (funcall test (car kv) key)
                                               (cons key value)
@@ -77,19 +77,23 @@
       (bitmap array bits index hit)
     (flet ((%insert (table)
              (%dict-insert table key value hash (1+ depth) test)))
-      (let ((new-node
-              (cond
-                (hit (%insert (aref array index)))
-                ((= depth 6) (make-instance 'dict-leaf
-                                            :key key
-                                            :value value))
-                (t (%insert (make-instance 'dict-table))))))
-        (make-instance 'dict-table
-                       :bitmap (logior bitmap (ash 1 bits))
-                       :table (funcall (if hit #'vec-update #'vec-insert)
-                                       array
-                                       index
-                                       new-node))))))
+      (if hit
+          (let* ((old-node (aref array index))
+                 (new-node (%insert old-node)))
+            (if (eq new-node old-node)
+                node
+                (make-instance 'dict-table
+                               :bitmap bitmap
+                               :table (vec-update array index new-node))))
+          (let ((new-node
+                  (if (= depth 6)
+                      (make-instance 'dict-leaf
+                                     :key key
+                                     :value value)
+                      (%insert (make-instance 'dict-table)))))
+            (make-instance 'dict-table
+                           :bitmap (logior bitmap (ash 1 bits))
+                           :table (vec-insert array index new-node)))))))
 
 
 
@@ -201,35 +205,70 @@ Note that HAMTs do not store items in any order, so the reduction operation
 cannot be sensitive to the order in which the items are reduced."
   (%hamt-reduce func (hamt-table dict) initial-value))
 
-(defun dict-clone (dict test hash)
-  (empty-dict :test (if test test (hamt-test dict))
-              :hash (if hash hash (hamt-hash dict))))
-
 (defun dict-map-values (func dict &key test hash)
   "Return a new dict with the values mapped by the given function.
 Optionally use new comparison and hash functions for the mapped dict."
-  (dict-reduce (lambda (d k v)
-                 (dict-insert d k (funcall func v)))
-               dict
-               (dict-clone dict test hash)))
+  (let ((mapped-test (if test test (hamt-test dict)))
+        (mapped-hash (if hash hash (hamt-hash dict))))
+    (make-instance
+     'hash-dict
+     :test mapped-test
+     :hash mapped-hash
+     :table (dict-reduce (lambda (mapped-table k v)
+                           (%dict-insert mapped-table
+                                         k
+                                         (funcall func v)
+                                         (funcall mapped-hash k)
+                                         0
+                                         mapped-test))
+                         dict
+                         (make-instance 'dict-table
+                                        :bitmap 0
+                                        :table (make-array 0))))))
 
 (defun dict-map-keys (func dict &key test hash)
   "Return a new dict with the keys mapped by the given function."
-  (dict-reduce (lambda (d k v)
-                 (dict-insert d (funcall func k) v))
-               dict
-               (dict-clone dict test hash)))
+  (let ((mapped-test (if test test (hamt-test dict)))
+        (mapped-hash (if hash hash (hamt-hash dict))))
+    (make-instance
+     'hash-dict
+     :test mapped-test
+     :hash mapped-hash
+     :table (dict-reduce (lambda (mapped-table k v)
+                           (let ((key (funcall func k)))
+                             (%dict-insert mapped-table
+                                           key
+                                           v
+                                           (funcall mapped-hash key)
+                                           0
+                                           mapped-test)))
+                         dict
+                         (make-instance 'dict-table
+                                        :bitmap 0
+                                        :table (make-array 0))))))
 
 (defun dict-filter (predicate dict)
   "Return a new dict consisting of the key/value pairs satisfying the
 given predicate."
-  (dict-reduce (lambda (filtered-dict k v)
-                 (if (funcall predicate k v)
-                     (dict-insert filtered-dict k v)
-                     filtered-dict))
-               dict
-               (empty-dict :test (hamt-test dict)
-                           :hash (hamt-hash dict))))
+  (with-hamt dict (:test test :hash hash :table table)
+    (declare (ignore table))
+    (make-instance
+     'hash-dict
+     :test test
+     :hash hash
+     :table (dict-reduce (lambda (filtered-table k v)
+                           (if (funcall predicate k v)
+                               (%dict-insert filtered-table
+                                             k
+                                             v
+                                             (funcall hash k)
+                                             0
+                                             test)
+                               filtered-table))
+                         dict
+                         (make-instance 'dict-table
+                                        :bitmap 0
+                                        :table (make-array 0))))))
 
 (defun dict-reduce-keys (func dict initial-value)
   "Reducing over dictionary keys, ignoring the values."
