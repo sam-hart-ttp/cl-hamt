@@ -31,9 +31,41 @@
 (defun %random-u64 (state)
   (%u64 (random (ash 1 64) state)))
 
+(defun %u64-from-octets-le (octets start)
+  (declare (type (vector (unsigned-byte 8)) octets)
+           (type fixnum start))
+  (%u64 (logior (ash (aref octets (+ start 0)) 0)
+                (ash (aref octets (+ start 1)) 8)
+                (ash (aref octets (+ start 2)) 16)
+                (ash (aref octets (+ start 3)) 24)
+                (ash (aref octets (+ start 4)) 32)
+                (ash (aref octets (+ start 5)) 40)
+                (ash (aref octets (+ start 6)) 48)
+                (ash (aref octets (+ start 7)) 56))))
+
+(defun %os-random-u64-pair ()
+  "Try to read two 64-bit keys from OS entropy. Returns NIL on failure."
+  (handler-case
+      (with-open-file (stream #P"/dev/urandom"
+                              :direction :input
+                              :element-type '(unsigned-byte 8))
+        (let ((octets (make-array 16 :element-type '(unsigned-byte 8))))
+          (if (= (read-sequence octets stream) 16)
+              (values (%u64-from-octets-le octets 0)
+                      (%u64-from-octets-le octets 8))
+              nil)))
+    (error () nil)))
+
 (defparameter *siphash-random-state* (make-random-state t))
-(defparameter *siphash-k0* (%random-u64 *siphash-random-state*))
-(defparameter *siphash-k1* (%random-u64 *siphash-random-state*))
+
+(defun %init-siphash-keys ()
+  (or (multiple-value-list (%os-random-u64-pair))
+      (list (%random-u64 *siphash-random-state*)
+            (%random-u64 *siphash-random-state*))))
+
+(defparameter *siphash-key-pair* (%init-siphash-keys))
+(defparameter *siphash-k0* (first *siphash-key-pair*))
+(defparameter *siphash-k1* (second *siphash-key-pair*))
 (declaim (type (unsigned-byte 64) *siphash-k0* *siphash-k1*))
 
 (defun %rotl64 (x r)
