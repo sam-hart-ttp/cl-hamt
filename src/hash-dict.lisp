@@ -220,11 +220,14 @@ Note that HAMTs do not store items in any order, so the reduction operation
 cannot be sensitive to the order in which the items are reduced."
   (%hamt-reduce func (hamt-table dict) initial-value))
 
-(defun dict-map-values (func dict &key test hash)
+(defun dict-map-values (func dict
+                        &key
+                          (test nil test-supplied-p)
+                          (hash nil hash-supplied-p))
   "Return a new dict with the values mapped by the given function.
 Optionally use new comparison and hash functions for the mapped dict."
-  (let ((mapped-test (if test test (hamt-test dict)))
-        (mapped-hash (if hash hash (hamt-hash dict))))
+  (let ((mapped-test (if test-supplied-p test (hamt-test dict)))
+        (mapped-hash (if hash-supplied-p hash (hamt-hash dict))))
     (rebuild-hash-dict mapped-test mapped-hash
       (dict-reduce (lambda (mapped-table k v)
                      (%dict-insert-node mapped-table
@@ -236,10 +239,13 @@ Optionally use new comparison and hash functions for the mapped dict."
                    dict
                    (make-dict-table)))))
 
-(defun dict-map-keys (func dict &key test hash)
+(defun dict-map-keys (func dict
+                      &key
+                        (test nil test-supplied-p)
+                        (hash nil hash-supplied-p))
   "Return a new dict with the keys mapped by the given function."
-  (let ((mapped-test (if test test (hamt-test dict)))
-        (mapped-hash (if hash hash (hamt-hash dict))))
+  (let ((mapped-test (if test-supplied-p test (hamt-test dict)))
+        (mapped-hash (if hash-supplied-p hash (hamt-hash dict))))
     (rebuild-hash-dict mapped-test mapped-hash
       (dict-reduce (lambda (mapped-table k v)
                      (let ((key (funcall func k)))
