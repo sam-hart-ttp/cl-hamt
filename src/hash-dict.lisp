@@ -4,7 +4,7 @@
 ;; dispatch in hot paths.
 (defun %dict-lookup-node (node key hash depth test)
   (declare (optimize (speed 3) (safety 0) (debug 0))
-           (type (unsigned-byte 32) hash)
+           (type (unsigned-byte 64) hash)
            (type fixnum depth))
   (typecase node
     (dict-leaf
@@ -32,7 +32,7 @@
 ;; not match but their hashes do.
 (defun %dict-insert-node (node key value hash depth test)
   (declare (optimize (speed 3) (safety 0) (debug 0))
-           (type (unsigned-byte 32) hash)
+           (type (unsigned-byte 64) hash)
            (type fixnum depth))
   (typecase node
     (dict-leaf
@@ -86,7 +86,7 @@
                  (make-dict-table
                   :bitmap bitmap
                   :table (vec-update array index new-node))))
-           (let ((new-node (if (= depth 6)
+           (let ((new-node (if (= depth +max-hash-depth+)
                                (make-dict-leaf
                                 :key key
                                 :value value)
@@ -103,7 +103,7 @@
 
 (defun %dict-remove-node (node key hash depth test)
   (declare (optimize (speed 3) (safety 0) (debug 0))
-           (type (unsigned-byte 32) hash)
+           (type (unsigned-byte 64) hash)
            (type fixnum depth))
   (typecase node
     (dict-leaf
@@ -164,12 +164,12 @@
 
 (defun empty-dict (&key (test #'equal) hash (hash-mode :fast))
   "Return an empty hash-dict, in which keys will be compared and hashed
-with the supplied test and hash functions. The hash must be a 32-bit hash.
+with the supplied test and hash functions. The hash must be a 64-bit hash.
 If HASH is not supplied, HASH-MODE chooses:
-  :FAST   - xxHash32 over sxhash
+  :FAST   - xxHash64 over sxhash
   :KEYED  - SipHash-2-4 over sxhash (keyed mixer)
   :SECURE - SipHash-2-4 over canonical safe object bytes.
-If HASH is supplied, it must return an unsigned 32-bit integer."
+If HASH is supplied, it must return an unsigned 64-bit integer."
   (make-instance 'hash-dict
                  :test (ctypecase test
                          (function test)

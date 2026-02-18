@@ -35,10 +35,13 @@
    (hash
    :reader hamt-hash
    :initarg :hash
-    :initform #'xxhash32-object)
+    :initform #'xxhash64-object)
    (table
     :reader hamt-table
     :initarg :table)))
+
+(defconstant +max-hash-depth+ 12
+  "Maximum 5-bit traversal depth for 64-bit hashes (13 levels total).")
 
 
 (defmacro with-hamt (hamt (&key test hash table) &body body)

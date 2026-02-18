@@ -234,8 +234,8 @@
       (visit obj))
     buffer))
 
-(defun %siphash32-octets (octets)
-  "SipHash-2-4 over OCTETS using process-local random keys, truncated to 32-bit."
+(defun %siphash64-octets (octets)
+  "SipHash-2-4 over OCTETS using process-local random keys."
   (declare (optimize (speed 3) (safety 0) (debug 0))
            (type (vector (unsigned-byte 8)) octets))
   (let* ((k0 *siphash-k0*)
@@ -294,29 +294,29 @@
       (sipround)
       (sipround)
       (sipround)
-      (%u32 (logxor v0 v1 v2 v3)))))
+      (%u64 (logxor v0 v1 v2 v3)))))
 
-(defun xxhash32-object (obj &optional (seed 0))
-  "xxHash32 over the 32-bit sxhash representation of OBJ."
+(defun xxhash64-object (obj &optional (seed 0))
+  "xxHash64 over the 64-bit sxhash representation of OBJ."
   (declare (optimize (speed 3) (safety 0) (debug 0))
-           (type (unsigned-byte 32) seed))
-  (let* ((prime2 #x85EBCA77)
-         (prime3 #xC2B2AE3D)
-         (prime4 #x27D4EB2F)
-         (prime5 #x165667B1)
-         (x (%u32 (sxhash obj)))
-         (h (%u32 (+ seed prime5 4))))
-    (setf h (%u32 (+ h (%u32 (* x prime3)))))
-    (setf h (%u32 (* (%rotl32 h 17) prime4)))
-    (setf h (logxor h (ash h -15)))
-    (setf h (%u32 (* h prime2)))
-    (setf h (logxor h (ash h -13)))
-    (setf h (%u32 (* h prime3)))
-    (setf h (logxor h (ash h -16)))
+           (type (unsigned-byte 64) seed))
+  (let* ((prime1 #x9E3779B185EBCA87)
+         (prime2 #xC2B2AE3D27D4EB4F)
+         (prime3 #x165667B19E3779F9)
+         (prime5 #x27D4EB2F165667C5)
+         (x (%u64 (sxhash obj)))
+         (h (%u64 (+ seed prime5 8))))
+    (setf h (%u64 (+ h (%u64 (* x prime2)))))
+    (setf h (%u64 (* (%rotl64 h 31) prime1)))
+    (setf h (logxor h (ash h -33)))
+    (setf h (%u64 (* h prime2)))
+    (setf h (logxor h (ash h -29)))
+    (setf h (%u64 (* h prime3)))
+    (setf h (logxor h (ash h -32)))
     h))
 
-(defun siphash32-sxhash-object (obj)
-  "SipHash-2-4 over the 64-bit sxhash representation of OBJ, truncated to 32-bit.
+(defun siphash64-sxhash-object (obj)
+  "SipHash-2-4 over the 64-bit sxhash representation of OBJ.
 This is a keyed mixer over sxhash."
   (declare (optimize (speed 3) (safety 0) (debug 0)))
   (let* ((k0 *siphash-k0*)
@@ -353,19 +353,19 @@ This is a keyed mixer over sxhash."
       (sipround)
       (sipround)
       (sipround)
-      (%u32 (logxor v0 v1 v2 v3)))))
+      (%u64 (logxor v0 v1 v2 v3)))))
 
-(defun siphash32-object (obj)
-  "SipHash-2-4 over canonical object bytes, truncated to 32-bit.
+(defun siphash64-object (obj)
+  "SipHash-2-4 over canonical object bytes.
 SECURE mode only supports a safe subset of object types and rejects unsupported
 or circular structures."
   (declare (optimize (speed 3) (safety 0) (debug 0)))
-  (%siphash32-octets (%object->octets obj)))
+  (%siphash64-octets (%object->octets obj)))
 
 (defun resolve-hash-function (hash hash-mode)
   "Resolve a hash function from explicit HASH or HASH-MODE.
 HASH-MODE values:
-  :FAST   - xxHash32 over sxhash (default)
+  :FAST   - xxHash64 over sxhash (default)
   :KEYED  - SipHash-2-4 over sxhash (legacy secure-mixer behavior)
   :SECURE - SipHash-2-4 over canonical safe object bytes."
   (cond
@@ -374,22 +374,22 @@ HASH-MODE values:
                            (symbol (symbol-function hash)))))
             (lambda (obj)
               (let ((value (funcall hash-fn obj)))
-                (if (typep value '(unsigned-byte 32))
+                (if (typep value '(unsigned-byte 64))
                     value
-                    (error "Custom hash function ~S returned ~S for ~S; expected an unsigned 32-bit integer."
+                    (error "Custom hash function ~S returned ~S for ~S; expected an unsigned 64-bit integer."
                            hash value obj))))))
     ((or (null hash-mode) (eq hash-mode :fast))
-     #'xxhash32-object)
+     #'xxhash64-object)
     ((eq hash-mode :keyed)
-     #'siphash32-sxhash-object)
+     #'siphash64-sxhash-object)
     ((eq hash-mode :secure)
-     #'siphash32-object)
+     #'siphash64-object)
     (t (error "Unknown hash mode ~S (expected :FAST, :KEYED, or :SECURE)." hash-mode))))
 
 (defun get-bits (hash depth)
   "Extract bits 5*depth : 5*(depth+1) from the number hash."
   (declare (optimize (speed 3) (safety 0) (debug 0))
-           (type (unsigned-byte 32) hash)
+           (type (unsigned-byte 64) hash)
            (type fixnum depth))
   (ldb (byte 5 (* 5 depth)) hash))
 

@@ -16,7 +16,7 @@
   (signals error
     (dict-insert (empty-dict :hash (lambda (x)
                                      (declare (ignore x))
-                                     (ash 1 40)))
+                                     (ash 1 70)))
                  "bad" 1)))
 
 (test hash-mode-validation

@@ -23,8 +23,8 @@
             (parse-arg nums 1 4096)
             (parse-arg nums 2 20))))
 
-(defun hamming-weight32 (x)
-  (logcount (ldb (byte 32 0) x)))
+(defun hamming-weight64 (x)
+  (logcount (ldb (byte 64 0) x)))
 
 (defun generate-integer-samples (n state)
   (loop for i below n
@@ -43,7 +43,7 @@
       (let* ((h (funcall hash-fn x))
              (bucket (mod h buckets)))
         (incf (aref counts bucket))
-        (incf bit-ones (hamming-weight32 h))
+        (incf bit-ones (hamming-weight64 h))
         (setf (gethash h seen) t)))
     (let* ((unique (hash-table-count seen))
            (collisions (- n unique))
@@ -54,7 +54,7 @@
                    sum (/ (* d d) expected)))
            (max-bucket (loop for c across counts maximize c))
            (min-bucket (loop for c across counts minimize c))
-           (bit-one-ratio (/ (float bit-ones) (* 32.0 n))))
+           (bit-one-ratio (/ (float bit-ones) (* 64.0 n))))
       (list :unique unique
             :collisions collisions
             :collision-rate (/ (float collisions) n)
@@ -128,23 +128,23 @@
   (let ((state (make-random-state t)))
     (run-dataset-analysis "Integer samples"
                           #'generate-integer-samples
-                          "xxhash32-object"
-                          #'cl-hamt::xxhash32-object
+                          "xxhash64-object"
+                          #'cl-hamt::xxhash64-object
                           n buckets trials state)
     (run-dataset-analysis "Integer samples"
                           #'generate-integer-samples
-                          "siphash32-object"
-                          #'cl-hamt::siphash32-object
+                          "siphash64-object"
+                          #'cl-hamt::siphash64-object
                           n buckets trials state)
     (run-dataset-analysis "String samples"
                           #'generate-string-samples
-                          "xxhash32-object"
-                          #'cl-hamt::xxhash32-object
+                          "xxhash64-object"
+                          #'cl-hamt::xxhash64-object
                           n buckets trials state)
     (run-dataset-analysis "String samples"
                           #'generate-string-samples
-                          "siphash32-object"
-                          #'cl-hamt::siphash32-object
+                          "siphash64-object"
+                          #'cl-hamt::siphash64-object
                           n buckets trials state)))
 
 (multiple-value-bind (n buckets trials)

@@ -15,7 +15,7 @@
   (signals error
     (set-insert (empty-set :hash (lambda (x)
                                    (declare (ignore x))
-                                   (ash 1 40)))
+                                   (ash 1 70)))
                 "bad-hash")))
 
 (test hash-mode-validation
@@ -24,12 +24,12 @@
 
 (test hash-output-range-and-spread
   (let* ((samples (loop for i below 128 collect (format nil "item-~D" i)))
-         (fast-hashes (mapcar #'cl-hamt::xxhash32-object samples))
-         (keyed-hashes (mapcar #'cl-hamt::siphash32-sxhash-object samples))
-         (secure-hashes (mapcar #'cl-hamt::siphash32-object samples)))
-    (is-true (every (lambda (h) (typep h '(unsigned-byte 32))) fast-hashes))
-    (is-true (every (lambda (h) (typep h '(unsigned-byte 32))) keyed-hashes))
-    (is-true (every (lambda (h) (typep h '(unsigned-byte 32))) secure-hashes))
+         (fast-hashes (mapcar #'cl-hamt::xxhash64-object samples))
+         (keyed-hashes (mapcar #'cl-hamt::siphash64-sxhash-object samples))
+         (secure-hashes (mapcar #'cl-hamt::siphash64-object samples)))
+    (is-true (every (lambda (h) (typep h '(unsigned-byte 64))) fast-hashes))
+    (is-true (every (lambda (h) (typep h '(unsigned-byte 64))) keyed-hashes))
+    (is-true (every (lambda (h) (typep h '(unsigned-byte 64))) secure-hashes))
     ;; Not a strict statistical test, just a guard against degenerate hashing.
     (is-true (> (length (remove-duplicates fast-hashes)) 96))
     (is-true (> (length (remove-duplicates keyed-hashes)) 96))
@@ -47,7 +47,7 @@
 (test secure-mode-does-not-dispatch-print-object
   (setf *evil-print-called* nil)
   (signals error
-    (cl-hamt::siphash32-object (make-instance 'evil-print-object)))
+    (cl-hamt::siphash64-object (make-instance 'evil-print-object)))
   (is-false *evil-print-called*))
 
 (test hash-mode-smoke
