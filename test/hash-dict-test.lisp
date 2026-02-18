@@ -19,6 +19,26 @@
                                      (ash 1 40)))
                  "bad" 1)))
 
+(test hash-mode-validation
+  (signals error
+    (empty-dict :hash-mode :unknown)))
+
+(test hash-mode-smoke
+  (let* ((pairs (loop for i below 64
+                      collect (cons (format nil "k-~D" i) i)))
+         (fast (reduce (lambda (d p) (dict-insert d (car p) (cdr p)))
+                       pairs
+                       :initial-value (empty-dict :hash-mode :fast)))
+         (secure (reduce (lambda (d p) (dict-insert d (car p) (cdr p)))
+                         pairs
+                         :initial-value (empty-dict :hash-mode :secure))))
+    (is (= (length pairs) (dict-size fast)))
+    (is (= (length pairs) (dict-size secure)))
+    (is-true (every (lambda (p)
+                      (and (equal (dict-lookup fast (car p)) (cdr p))
+                           (equal (dict-lookup secure (car p)) (cdr p))))
+                    pairs))))
+
 
 (defvar pacers (dict-insert (empty-dict)
                             "Reggie Miller" 2.01

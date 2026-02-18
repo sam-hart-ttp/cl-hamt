@@ -18,6 +18,31 @@
                                    (ash 1 40)))
                 "bad-hash")))
 
+(test hash-mode-validation
+  (signals error
+    (empty-set :hash-mode :unknown)))
+
+(test hash-output-range-and-spread
+  (let* ((samples (loop for i below 128 collect (format nil "item-~D" i)))
+         (fast-hashes (mapcar #'cl-hamt::xxhash32-object samples))
+         (secure-hashes (mapcar #'cl-hamt::siphash32-object samples)))
+    (is-true (every (lambda (h) (typep h '(unsigned-byte 32))) fast-hashes))
+    (is-true (every (lambda (h) (typep h '(unsigned-byte 32))) secure-hashes))
+    ;; Not a strict statistical test, just a guard against degenerate hashing.
+    (is-true (> (length (remove-duplicates fast-hashes)) 96))
+    (is-true (> (length (remove-duplicates secure-hashes)) 96))))
+
+(test hash-mode-smoke
+  (let* ((items (loop for i below 64 collect (format nil "name-~D" i)))
+         (fast (apply #'set-insert (cons (empty-set :hash-mode :fast) items)))
+         (secure (apply #'set-insert (cons (empty-set :hash-mode :secure) items))))
+    (is (= (length items) (set-size fast)))
+    (is (= (length items) (set-size secure)))
+    (is-true (every (lambda (x)
+                      (and (set-lookup fast x)
+                           (set-lookup secure x)))
+                    items))))
+
 (defvar swinging-hepcats
   (set-insert (empty-set)
               "Louis Armstrong"
