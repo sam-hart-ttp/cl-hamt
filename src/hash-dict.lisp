@@ -19,7 +19,7 @@
     (dict-table
      (with-table node hash depth
          (bitmap array bits index hit)
-       (declare (type (unsigned-byte 32) bitmap)
+       (declare (type (unsigned-byte 64) bitmap)
                 (type simple-vector array)
                 (type fixnum bits index))
        (if hit
@@ -75,7 +75,7 @@
     (dict-table
      (with-table node hash depth
          (bitmap array bits index hit)
-       (declare (type (unsigned-byte 32) bitmap)
+       (declare (type (unsigned-byte 64) bitmap)
                 (type simple-vector array)
                 (type fixnum bits index))
        (if hit
@@ -134,7 +134,7 @@
     (dict-table
      (with-table node hash depth
          (bitmap array bits index hit)
-       (declare (type (unsigned-byte 32) bitmap)
+       (declare (type (unsigned-byte 64) bitmap)
                 (type simple-vector array)
                 (type fixnum bits index))
        (if (not hit)

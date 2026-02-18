@@ -11,7 +11,7 @@
   (entries '()))
 
 (defstruct (set-table (:constructor make-set-table (&key (bitmap 0) (table (make-array 0)))))
-  (bitmap 0 :type (unsigned-byte 32))
+  (bitmap 0 :type (unsigned-byte 64))
   (table (make-array 0) :type simple-vector))
 
 (defstruct (dict-leaf (:constructor make-dict-leaf (&key key value)))
@@ -23,7 +23,7 @@
   (entries '()))
 
 (defstruct (dict-table (:constructor make-dict-table (&key (bitmap 0) (table (make-array 0)))))
-  (bitmap 0 :type (unsigned-byte 32))
+  (bitmap 0 :type (unsigned-byte 64))
   (table (make-array 0) :type simple-vector))
 
 ;; Base HAMT class
@@ -39,9 +39,6 @@
    (table
     :reader hamt-table
     :initarg :table)))
-
-(defconstant +max-hash-depth+ 12
-  "Maximum 5-bit traversal depth for 64-bit hashes (13 levels total).")
 
 
 (defmacro with-hamt (hamt (&key test hash table) &body body)
