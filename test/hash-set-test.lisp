@@ -35,6 +35,21 @@
     (is-true (> (length (remove-duplicates keyed-hashes)) 96))
     (is-true (> (length (remove-duplicates secure-hashes)) 96))))
 
+(defvar *evil-print-called* nil)
+
+(defclass evil-print-object () ())
+
+(defmethod print-object ((obj evil-print-object) stream)
+  (declare (ignore obj))
+  (setf *evil-print-called* t)
+  (write-string "#<evil-print-object>" stream))
+
+(test secure-mode-does-not-dispatch-print-object
+  (setf *evil-print-called* nil)
+  (signals error
+    (cl-hamt::siphash32-object (make-instance 'evil-print-object)))
+  (is-false *evil-print-called*))
+
 (test hash-mode-smoke
   (let* ((items (loop for i below 64 collect (format nil "name-~D" i)))
          (fast (apply #'set-insert (cons (empty-set :hash-mode :fast) items)))

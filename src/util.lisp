@@ -63,19 +63,176 @@
                  (emit #x3F)))))
     octets))
 
+(defun %octet-buffer ()
+  (make-array 32
+              :element-type '(unsigned-byte 8)
+              :adjustable t
+              :fill-pointer 0))
+
+(defun %emit-u8 (buffer byte)
+  (declare (type (vector (unsigned-byte 8)) buffer)
+           (type (unsigned-byte 8) byte))
+  (vector-push-extend byte buffer)
+  buffer)
+
+(defun %emit-varuint (buffer n)
+  "Encode N as unsigned LEB128."
+  (declare (type (vector (unsigned-byte 8)) buffer)
+           (type (integer 0 *) n))
+  (loop
+    (let ((byte (logand n #x7f)))
+      (setf n (ash n -7))
+      (if (zerop n)
+          (progn
+            (%emit-u8 buffer byte)
+            (return buffer))
+          (%emit-u8 buffer (logior byte #x80))))))
+
+(defun %emit-string (buffer string)
+  (declare (type (vector (unsigned-byte 8)) buffer)
+           (type string string))
+  (let* ((octets (%string->utf8-octets string))
+         (len (length octets)))
+    (declare (type fixnum len)
+             (type (vector (unsigned-byte 8)) octets))
+    (%emit-varuint buffer len)
+    (loop for i fixnum from 0 below len do
+      (%emit-u8 buffer (aref octets i)))
+    buffer))
+
+(defun %emit-integer (buffer n)
+  (declare (type (vector (unsigned-byte 8)) buffer)
+           (type integer n))
+  ;; Encode sign and magnitude bytes (little endian).
+  (let ((m (if (minusp n) (- n) n))
+        (bytes (%octet-buffer)))
+    (declare (type (integer 0 *) m)
+             (type (vector (unsigned-byte 8)) bytes))
+    (%emit-u8 buffer (if (minusp n) 1 0))
+    (loop while (> m 0) do
+      (%emit-u8 bytes (logand m #xff))
+      (setf m (ash m -8)))
+    (when (= (length bytes) 0)
+      (%emit-u8 bytes 0))
+    (%emit-varuint buffer (length bytes))
+    (loop for i fixnum from 0 below (length bytes) do
+      (%emit-u8 buffer (aref bytes i)))
+    buffer))
+
+(defun %emit-symbol (buffer sym)
+  (declare (type (vector (unsigned-byte 8)) buffer)
+           (type symbol sym))
+  (cond
+    ((keywordp sym)
+     (%emit-u8 buffer 1)
+     (%emit-string buffer (symbol-name sym)))
+    ((symbol-package sym)
+     (%emit-u8 buffer 2)
+     (%emit-string buffer (package-name (symbol-package sym)))
+     (%emit-string buffer (symbol-name sym)))
+    (t
+     ;; Uninterned symbols are hashed by their print-name only.
+     (%emit-u8 buffer 3)
+     (%emit-string buffer (symbol-name sym)))))
+
+(defun %emit-float (buffer fl)
+  (declare (type (vector (unsigned-byte 8)) buffer)
+           (type float fl))
+  ;; Use write-to-string for float primitives only (no generic print-object dispatch).
+  (%emit-string buffer
+                (with-standard-io-syntax
+                  (let ((*print-readably* t)
+                        (*print-escape* t))
+                    (write-to-string fl)))))
+
 (defun %object->octets (obj)
-  "Serialize OBJ into UTF-8 octets using escaped printed representation."
+  "Serialize OBJ into tagged canonical octets without invoking print-object."
   (declare (optimize (speed 3) (safety 0) (debug 0)))
-  (%string->utf8-octets
-   (with-standard-io-syntax
-     (let ((*print-readably* nil)
-           (*print-escape* t)
-           (*print-circle* t)
-           (*print-level* nil)
-           (*print-length* nil)
-           (*print-array* t)
-           (*read-eval* nil))
-       (write-to-string obj)))))
+  (let ((buffer (%octet-buffer))
+        (seen (make-hash-table :test #'eq)))
+    (declare (type (vector (unsigned-byte 8)) buffer))
+    (labels ((visit (x)
+               (typecase x
+                 (null
+                  (%emit-u8 buffer 0))
+                 (cons
+                 (when (gethash x seen)
+                    (error "SECURE hash does not support circular cons structures (type ~S)."
+                           (type-of x)))
+                  (setf (gethash x seen) t)
+                  (%emit-u8 buffer 1)
+                  (visit (car x))
+                  (visit (cdr x))
+                  (remhash x seen))
+                 (integer
+                  (%emit-u8 buffer 2)
+                  (%emit-integer buffer x))
+                 (ratio
+                  (%emit-u8 buffer 3)
+                  (visit (numerator x))
+                  (visit (denominator x)))
+                 (single-float
+                  (%emit-u8 buffer 4)
+                  (%emit-float buffer x))
+                 (double-float
+                  (%emit-u8 buffer 5)
+                  (%emit-float buffer x))
+                 (short-float
+                  (%emit-u8 buffer 6)
+                  (%emit-float buffer x))
+                 (long-float
+                  (%emit-u8 buffer 7)
+                  (%emit-float buffer x))
+                 (complex
+                  (%emit-u8 buffer 8)
+                  (visit (realpart x))
+                  (visit (imagpart x)))
+                 (character
+                  (%emit-u8 buffer 9)
+                  (%emit-varuint buffer (char-code x)))
+                 (string
+                  (%emit-u8 buffer 10)
+                  (%emit-string buffer x))
+                 (symbol
+                  (%emit-u8 buffer 11)
+                  (%emit-symbol buffer x))
+                 (bit-vector
+                 (when (gethash x seen)
+                    (error "SECURE hash does not support circular vectors (type ~S)."
+                           (type-of x)))
+                  (setf (gethash x seen) t)
+                  (%emit-u8 buffer 12)
+                  (%emit-varuint buffer (length x))
+                  (loop for i fixnum from 0 below (length x) do
+                    (%emit-u8 buffer (if (zerop (aref x i)) 0 1)))
+                  (remhash x seen))
+                 (vector
+                 (when (gethash x seen)
+                    (error "SECURE hash does not support circular vectors (type ~S)."
+                           (type-of x)))
+                  (setf (gethash x seen) t)
+                  (%emit-u8 buffer 13)
+                  (%emit-varuint buffer (length x))
+                  (loop for i fixnum from 0 below (length x) do
+                    (visit (aref x i)))
+                  (remhash x seen))
+                 (array
+                 (when (gethash x seen)
+                    (error "SECURE hash does not support circular arrays (type ~S)."
+                           (type-of x)))
+                  (setf (gethash x seen) t)
+                  (%emit-u8 buffer 14)
+                  (%emit-varuint buffer (array-rank x))
+                  (loop for d fixnum below (array-rank x) do
+                    (%emit-varuint buffer (array-dimension x d)))
+                  (loop for i fixnum below (array-total-size x) do
+                    (visit (row-major-aref x i)))
+                  (remhash x seen))
+                 (t
+                  (error "SECURE hash does not support objects of type ~S."
+                         (type-of x))))))
+      (visit obj))
+    buffer))
 
 (defun %siphash32-octets (octets)
   "SipHash-2-4 over OCTETS using process-local random keys, truncated to 32-bit."
@@ -199,8 +356,9 @@ This is a keyed mixer over sxhash."
       (%u32 (logxor v0 v1 v2 v3)))))
 
 (defun siphash32-object (obj)
-  "SipHash-2-4 over UTF-8 bytes of OBJ's escaped printed representation,
-truncated to 32-bit. Uses process-local random keys."
+  "SipHash-2-4 over canonical object bytes, truncated to 32-bit.
+SECURE mode only supports a safe subset of object types and rejects unsupported
+or circular structures."
   (declare (optimize (speed 3) (safety 0) (debug 0)))
   (%siphash32-octets (%object->octets obj)))
 
@@ -209,7 +367,7 @@ truncated to 32-bit. Uses process-local random keys."
 HASH-MODE values:
   :FAST   - xxHash32 over sxhash (default)
   :KEYED  - SipHash-2-4 over sxhash (legacy secure-mixer behavior)
-  :SECURE - SipHash-2-4 over serialized object bytes."
+  :SECURE - SipHash-2-4 over canonical safe object bytes."
   (cond
     (hash (let ((hash-fn (ctypecase hash
                            (function hash)

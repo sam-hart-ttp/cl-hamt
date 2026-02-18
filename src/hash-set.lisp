@@ -130,7 +130,7 @@ with the supplied test and hash functions. The hash must be a 32-bit hash.
 If HASH is not supplied, HASH-MODE chooses:
   :FAST   - xxHash32 over sxhash
   :KEYED  - SipHash-2-4 over sxhash (keyed mixer)
-  :SECURE - SipHash-2-4 over serialized object bytes.
+  :SECURE - SipHash-2-4 over canonical safe object bytes.
 If HASH is supplied, it must return an unsigned 32-bit integer."
   (make-instance 'hash-set
                  :test (ctypecase test
