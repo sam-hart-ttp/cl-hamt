@@ -150,6 +150,20 @@ Key: 00 01 02 ... 0f, message: 00 01 02 ... (n-1)."
                                 (integer-set 10))
                        81)))
 
+(test set-map-hash-test-compatibility
+  (let ((s (set-insert (empty-set) "ABC")))
+    (signals error
+      (set-map #'identity s :test #'equalp))
+    (let ((mapped (set-map #'identity
+                           s
+                           :test #'equalp
+                           :hash (lambda (x)
+                                   (ldb (byte 64 0)
+                                        (sxhash (if (stringp x)
+                                                    (string-downcase x)
+                                                    x)))))))
+      (is-true (set-lookup mapped "abc")))))
+
 
 ;; We force collisions with a constant hash function to test conflict handling.
 (defun collision-hash (x)

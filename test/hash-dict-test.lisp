@@ -182,6 +182,34 @@
   (is-true (dict-lookup tall-pacers "Detlef Schrempf"))
   (is-false (dict-lookup tall-pacers "Reggie Miller")))
 
+(test dict-map-values-hash-test-compatibility
+  (let ((d (dict-insert (empty-dict) "ABC" 1)))
+    (signals error
+      (dict-map-values #'identity d :test #'equalp))
+    (let ((mapped (dict-map-values #'identity
+                                   d
+                                   :test #'equalp
+                                   :hash (lambda (x)
+                                           (ldb (byte 64 0)
+                                                (sxhash (if (stringp x)
+                                                            (string-downcase x)
+                                                            x)))))))
+      (is (= 1 (dict-lookup mapped "abc"))))))
+
+(test dict-map-keys-hash-test-compatibility
+  (let ((d (dict-insert (empty-dict) "ABC" 1)))
+    (signals error
+      (dict-map-keys #'identity d :test #'equalp))
+    (let ((mapped (dict-map-keys #'identity
+                                 d
+                                 :test #'equalp
+                                 :hash (lambda (x)
+                                         (ldb (byte 64 0)
+                                              (sxhash (if (stringp x)
+                                                          (string-downcase x)
+                                                          x)))))))
+      (is (= 1 (dict-lookup mapped "abc"))))))
+
 
 (defvar capital-dict
   (dict-insert (empty-dict)

@@ -226,8 +226,16 @@ cannot be sensitive to the order in which the items are reduced."
                           (hash nil hash-supplied-p))
   "Return a new dict with the values mapped by the given function.
 Optionally use new comparison and hash functions for the mapped dict."
-  (let ((mapped-test (if test-supplied-p test (hamt-test dict)))
-        (mapped-hash (if hash-supplied-p hash (hamt-hash dict))))
+  (let* ((mapped-test-input (if test-supplied-p test (hamt-test dict)))
+         (mapped-test (coerce-test-function mapped-test-input))
+         (mapped-hash (if hash-supplied-p
+                          (resolve-hash-function hash nil)
+                          (hamt-hash dict)))
+         (effective-hash-arg (if (or hash-supplied-p
+                                     (not (default-hash-function-p mapped-hash)))
+                                 mapped-hash
+                                 nil)))
+    (validate-hash-test-compatibility mapped-test-input mapped-test effective-hash-arg)
     (rebuild-hash-dict mapped-test mapped-hash
       (dict-reduce (lambda (mapped-table k v)
                      (%dict-insert-node mapped-table
@@ -244,8 +252,16 @@ Optionally use new comparison and hash functions for the mapped dict."
                         (test nil test-supplied-p)
                         (hash nil hash-supplied-p))
   "Return a new dict with the keys mapped by the given function."
-  (let ((mapped-test (if test-supplied-p test (hamt-test dict)))
-        (mapped-hash (if hash-supplied-p hash (hamt-hash dict))))
+  (let* ((mapped-test-input (if test-supplied-p test (hamt-test dict)))
+         (mapped-test (coerce-test-function mapped-test-input))
+         (mapped-hash (if hash-supplied-p
+                          (resolve-hash-function hash nil)
+                          (hamt-hash dict)))
+         (effective-hash-arg (if (or hash-supplied-p
+                                     (not (default-hash-function-p mapped-hash)))
+                                 mapped-hash
+                                 nil)))
+    (validate-hash-test-compatibility mapped-test-input mapped-test effective-hash-arg)
     (rebuild-hash-dict mapped-test mapped-hash
       (dict-reduce (lambda (mapped-table k v)
                      (let ((key (funcall func k)))

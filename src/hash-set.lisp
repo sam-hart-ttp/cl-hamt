@@ -169,8 +169,16 @@ cannot be sensitive to the order in which the items are reduced."
                   (hash nil hash-supplied-p))
   "Return the image of a set under a given function. Optionally use new
 comparison and hash functions for the mapped set."
-  (let ((mapped-test (if test-supplied-p test (hamt-test set)))
-        (mapped-hash (if hash-supplied-p hash (hamt-hash set))))
+  (let* ((mapped-test-input (if test-supplied-p test (hamt-test set)))
+         (mapped-test (coerce-test-function mapped-test-input))
+         (mapped-hash (if hash-supplied-p
+                          (resolve-hash-function hash nil)
+                          (hamt-hash set)))
+         (effective-hash-arg (if (or hash-supplied-p
+                                     (not (default-hash-function-p mapped-hash)))
+                                 mapped-hash
+                                 nil)))
+    (validate-hash-test-compatibility mapped-test-input mapped-test effective-hash-arg)
     (rebuild-hash-set mapped-test mapped-hash
       (set-reduce (lambda (mapped-table x)
                     (let ((y (funcall func x)))

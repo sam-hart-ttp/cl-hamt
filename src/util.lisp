@@ -375,6 +375,11 @@ or circular structures."
     (error "Default hash modes are intentionally restricted to TEST EQ, EQL, or EQUAL. Supply explicit :HASH to override (TEST=~S)."
            test)))
 
+(defun default-hash-function-p (hash-fn)
+  (or (eq hash-fn #'xxhash64-object)
+      (eq hash-fn #'siphash64-sxhash-object)
+      (eq hash-fn #'siphash64-object)))
+
 (defun resolve-hash-function (hash hash-mode)
   "Resolve a hash function from explicit HASH or HASH-MODE.
 HASH-MODE values:
