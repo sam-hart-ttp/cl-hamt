@@ -194,6 +194,9 @@ key/value pairs (k1, v1), ..., (kn, vn), one would invoke
   (dict-insert dict k1 v1 ... kn vn).
 If any of the keys are already present in the dict passed, they are mapped
 to the new values in the returned dict."
+  (when (oddp (length args))
+    (error "DICT-INSERT expects an even number of key/value arguments, got ~D."
+           (length args)))
   (with-hamt dict (:test test :hash hash :table table)
     (flet ((%insert (table key value)
              (%dict-insert-node table key value (funcall hash key) 0 test)))
