@@ -197,7 +197,9 @@ Key: 00 01 02 ... 0f, message: 00 01 02 ... (n-1)."
                        :initial-value t))
   (is-true (set-lookup (set-remove set-with-collisions "PSYCHOANALYZE")
                        "BEDUCKS"))
-  (is (= 5 (set-size (set-remove set-with-collisions "BEDUCKS")))))
+  (is (= 5 (set-size (set-remove set-with-collisions "BEDUCKS"))))
+  (is (typep (set-lookup set-with-collisions "BEDUCKS") 'boolean))
+  (is (typep (set-lookup set-with-collisions "IRIDOCYCLITIS") 'boolean)))
 
 (defvar max-number-value 1000)
 (defvar some-numbers

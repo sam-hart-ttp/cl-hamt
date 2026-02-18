@@ -8,7 +8,7 @@
     (set-leaf
      (funcall test (node-key node) key))
     (set-conflict
-     (member key (conflict-entries node) :test test))
+     (not (null (member key (conflict-entries node) :test test))))
     (set-table
      (with-typed-table node hash depth
          (bitmap array bits index hit)
