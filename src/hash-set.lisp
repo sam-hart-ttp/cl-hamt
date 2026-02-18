@@ -222,19 +222,76 @@ comparison and hash functions for the mapped set."
               set
               '()))
 
+(defun %set-merge-into (source target)
+  "Insert all elements of SOURCE into TARGET using TARGET's hash/test."
+  (with-hamt target (:test target-test :hash target-hash :table target-table)
+    (make-instance
+     'hash-set
+     :test target-test
+     :hash target-hash
+     :table (set-reduce (lambda (acc x)
+                          (%set-insert-node acc
+                                            x
+                                            (funcall target-hash x)
+                                            0
+                                            target-test))
+                        source
+                        target-table))))
+
+(defun %set-remove-all-from (base to-remove)
+  "Remove all elements of TO-REMOVE from BASE using BASE's hash/test."
+  (with-hamt base (:test base-test :hash base-hash :table base-table)
+    (make-instance
+     'hash-set
+     :test base-test
+     :hash base-hash
+     :table (set-reduce (lambda (acc x)
+                          (%set-remove-node acc
+                                            x
+                                            (funcall base-hash x)
+                                            0
+                                            base-test))
+                        to-remove
+                        base-table))))
+
+(defun %set-intersection-into (left right)
+  "Return elements of RIGHT that are present in LEFT.
+The returned set uses RIGHT's hash/test semantics."
+  (with-hamt left (:test left-test :hash left-hash :table left-table)
+    (with-hamt right (:test right-test :hash right-hash :table right-table)
+      (declare (ignore right-table))
+      (make-instance
+       'hash-set
+       :test right-test
+       :hash right-hash
+       :table (set-reduce (lambda (acc x)
+                            (if (%set-lookup-node left-table
+                                                  x
+                                                  (funcall left-hash x)
+                                                  0
+                                                  left-test)
+                                (%set-insert-node acc
+                                                  x
+                                                  (funcall right-hash x)
+                                                  0
+                                                  right-test)
+                                acc))
+                          right
+                          (make-set-table))))))
+
 (defun set-union (set &rest args)
   (reduce (lambda (set1 set2)
-            (set-reduce #'set-insert set1 set2))
+            (%set-merge-into set1 set2))
           args :initial-value set))
 
 (defun set-intersection (set &rest args)
   (reduce (lambda (set1 set2)
-            (set-filter (lambda (x) (set-lookup set1 x)) set2))
+            (%set-intersection-into set1 set2))
           args :initial-value set))
 
 (defun set-diff (set &rest args)
   (reduce (lambda (set1 set2)
-            (set-reduce #'set-remove set2 set1))
+            (%set-remove-all-from set1 set2))
           args :initial-value set))
 
 (defun set-symmetric-diff (set1 set2)
