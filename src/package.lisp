@@ -43,5 +43,5 @@
    #:hash-set
 
    ;; Conditions
-   #:incompatible-tests
+   #:incompatible-tests-error
    ))
