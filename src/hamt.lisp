@@ -94,11 +94,13 @@
 (defmacro with-conflict-removal-scan ((entries entry matches-p)
                                       (kept kept-count removed)
                                       &body body)
+  "Scan ENTRIES, removing the first element satisfying MATCHES-P.
+Short-circuits after the first match so duplicate entries are preserved."
   `(let ((,kept '())
          (,kept-count 0)
          (,removed nil))
      (dolist (,entry ,entries)
-       (if ,matches-p
+       (if (and (not ,removed) ,matches-p)
            (setf ,removed t)
            (progn
              (incf ,kept-count)
