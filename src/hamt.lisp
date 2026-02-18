@@ -143,10 +143,10 @@
   ())
 
 (defun array-eq (arr1 arr2 test)
+  (declare (type simple-vector arr1 arr2))
   (let ((n (length arr1)))
+    (declare (type fixnum n))
     (if (not (= n (length arr2)))
         nil
-        (do ((i 0 (+ i 1)))
-            ((or (= i n)
-                 (not (funcall test (elt arr1 i) (elt arr2 i))))
-             (= i n))))))
+        (loop for i fixnum from 0 below n
+              always (funcall test (aref arr1 i) (aref arr2 i))))))
