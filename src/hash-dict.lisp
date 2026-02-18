@@ -1,19 +1,5 @@
 (in-package #:cl-hamt)
 
-;; Leaves in a dictionary also store the value contained at the node, as well
-;; as a key
-(defclass dict-leaf (leaf)
-  ((value
-    :reader node-value
-    :initarg :value
-    :initform nil)))
-
-;; These classes give extra information to dispatch on, e.g. for looking up
-;; entries in conflict nodes
-(defclass dict-conflict (conflict) ())
-(defclass dict-table (table) ())
-
-
 ;; Lookup/insert/remove use explicit node walking to avoid recursive generic
 ;; dispatch in hot paths.
 (defun %dict-lookup-node (node key hash depth test)
@@ -52,16 +38,16 @@
     (dict-leaf
      (let ((nkey (node-key node)))
        (if (funcall test key nkey)
-           (make-instance 'dict-leaf
-                          :key key
-                          :value value)
-           (make-instance 'dict-conflict
-                          :hash hash
-                          :entries (acons key
-                                          value
-                                          (acons nkey
-                                                 (node-value node)
-                                                 '()))))))
+           (make-dict-leaf
+            :key key
+            :value value)
+           (make-dict-conflict
+            :hash hash
+            :entries (acons key
+                            value
+                            (acons nkey
+                                   (node-value node)
+                                   '()))))))
     (dict-conflict
      (let ((entries (conflict-entries node))
            (updated '())
@@ -80,12 +66,12 @@
        (cond
          ((and found (not changed)) node)
          (found
-          (make-instance 'dict-conflict
-                         :hash hash
-                         :entries (nreverse updated)))
-         (t (make-instance 'dict-conflict
-                           :hash hash
-                           :entries (cons (cons key value) entries))))))
+          (make-dict-conflict
+           :hash hash
+           :entries (nreverse updated)))
+         (t (make-dict-conflict
+             :hash hash
+             :entries (cons (cons key value) entries))))))
     (dict-table
      (with-table node hash depth
          (bitmap array bits index hit)
@@ -97,22 +83,22 @@
                   (new-node (%dict-insert-node old-node key value hash (1+ depth) test)))
              (if (eq new-node old-node)
                  node
-                 (make-instance 'dict-table
-                                :bitmap bitmap
-                                :table (vec-update array index new-node))))
+                 (make-dict-table
+                  :bitmap bitmap
+                  :table (vec-update array index new-node))))
            (let ((new-node (if (= depth 6)
-                               (make-instance 'dict-leaf
-                                              :key key
-                                              :value value)
-                               (%dict-insert-node (make-instance 'dict-table)
+                               (make-dict-leaf
+                                :key key
+                                :value value)
+                               (%dict-insert-node (make-dict-table)
                                                   key
                                                   value
                                                   hash
                                                   (1+ depth)
                                                   test))))
-             (make-instance 'dict-table
-                            :bitmap (logior bitmap (ash 1 bits))
-                            :table (vec-insert array index new-node))))))
+             (make-dict-table
+              :bitmap (logior bitmap (ash 1 bits))
+              :table (vec-insert array index new-node))))))
     (t node)))
 
 (defun %dict-remove-node (node key hash depth test)
@@ -139,12 +125,12 @@
        (cond
          ((not removed) node)
          ((= kept-count 1)
-          (make-instance 'dict-leaf
-                         :key (caar kept)
-                         :value (cdar kept)))
-         (t (make-instance 'dict-conflict
-                           :hash hash
-                           :entries (nreverse kept))))))
+          (make-dict-leaf
+           :key (caar kept)
+           :value (cdar kept)))
+         (t (make-dict-conflict
+             :hash hash
+             :entries (nreverse kept))))))
     (dict-table
      (with-table node hash depth
          (bitmap array bits index hit)
@@ -158,28 +144,14 @@
              (cond
                ((eq new-node old-node) node)
                (new-node
-                (make-instance 'dict-table
-                               :bitmap bitmap
-                               :table (vec-update array index new-node)))
+                (make-dict-table
+                 :bitmap bitmap
+                 :table (vec-update array index new-node)))
                ((= bitmap 1) nil)
-               (t (make-instance 'dict-table
-                                 :bitmap (logxor bitmap (ash 1 bits))
-                                 :table (vec-remove array index))))))))
+               (t (make-dict-table
+                   :bitmap (logxor bitmap (ash 1 bits))
+                   :table (vec-remove array index))))))))
     (t node)))
-
-
-
-;; Methods for reducing over elements of HAMTs
-(defmethod %hamt-reduce (func (node dict-leaf) initial-value)
-  (funcall func initial-value (node-key node) (node-value node)))
-
-(defmethod %hamt-reduce (func (node dict-conflict) initial-value)
-  (labels ((f (alist r)
-             (if alist
-                 (f (cdr alist)
-                    (funcall func r (caar alist) (cdar alist)))
-                 r)))
-    (f (conflict-entries node) initial-value)))
 
 
 
@@ -188,9 +160,7 @@
   ((table
     :reader hamt-table
     :initarg :table
-    :initform (make-instance 'dict-table
-                             :bitmap 0
-                             :table (make-array 0)))))
+    :initform (make-dict-table))))
 
 (defun empty-dict (&key (test #'equal) (hash #'cl-murmurhash:murmurhash))
   "Return an empty hash-dict, in which keys will be compared and hashed
@@ -273,9 +243,7 @@ Optionally use new comparison and hash functions for the mapped dict."
                                               0
                                               mapped-test))
                          dict
-                         (make-instance 'dict-table
-                                        :bitmap 0
-                                        :table (make-array 0))))))
+                         (make-dict-table)))))
 
 (defun dict-map-keys (func dict &key test hash)
   "Return a new dict with the keys mapped by the given function."
@@ -294,9 +262,7 @@ Optionally use new comparison and hash functions for the mapped dict."
                                                 0
                                                 mapped-test)))
                          dict
-                         (make-instance 'dict-table
-                                        :bitmap 0
-                                        :table (make-array 0))))))
+                         (make-dict-table)))))
 
 (defun dict-filter (predicate dict)
   "Return a new dict consisting of the key/value pairs satisfying the
@@ -317,9 +283,7 @@ given predicate."
                                                   test)
                                filtered-table))
                          dict
-                         (make-instance 'dict-table
-                                        :bitmap 0
-                                        :table (make-array 0))))))
+                         (make-dict-table)))))
 
 (defun dict-reduce-keys (func dict initial-value)
   "Reducing over dictionary keys, ignoring the values."
@@ -341,47 +305,34 @@ given predicate."
                dict
                '()))
 
-;; Methods for deciding if two dictionaries are equal
-(defgeneric %hash-dict-eq (dict1 dict2 key-test value-test))
-
-(defmethod %hash-dict-eq (dict1 dict2 key-test value-test)
-  (declare (ignore dict1 dict2 key-test value-test))
-  nil)
-
-(defmethod %hash-dict-eq ((node1 dict-leaf)
-                          (node2 dict-leaf)
-                          key-test
-                          value-test)
-  (and (funcall key-test (node-key node1) (node-key node2))
-       (funcall value-test (node-value node1) (node-value node2))))
-
-
-(defmethod %hash-dict-eq ((node1 dict-conflict)
-                          (node2 dict-conflict)
-                          key-test
-                          value-test)
-  (and (equal (conflict-hash node1) (conflict-hash node2))
-       (labels ((alist-eq (alist1 alist2)
-                  (if (or (not alist1) (not alist2))
-                      (and (not alist1) (not alist2))
-                      (let ((key1 (caar alist1))
-                            (key2 (caar alist2))
-                            (value1 (cdar alist1))
-                            (value2 (cdar alist2)))
-                        (when (and (funcall key-test key1 key2)
-                                   (funcall value-test value1 value2))
-                            (alist-eq (cdr alist1) (cdr alist2)))))))
-         (alist-eq (conflict-entries node1) (conflict-entries node2)))))
-
-(defmethod %hash-dict-eq ((node1 dict-table)
-                          (node2 dict-table)
-                          key-test
-                          value-test)
-  (and (equal (table-bitmap node1) (table-bitmap node2))
-       (array-eq (table-array node1)
-                 (table-array node2)
-                 (lambda (dict1 dict2)
-                   (%hash-dict-eq dict1 dict2 key-test value-test)))))
+(defun %hash-dict-eq (node1 node2 key-test value-test)
+  (typecase node1
+    (dict-leaf
+     (and (typep node2 'dict-leaf)
+          (funcall key-test (node-key node1) (node-key node2))
+          (funcall value-test (node-value node1) (node-value node2))))
+    (dict-conflict
+     (and (typep node2 'dict-conflict)
+          (equal (conflict-hash node1) (conflict-hash node2))
+          (labels ((alist-eq (alist1 alist2)
+                     (if (or (not alist1) (not alist2))
+                         (and (not alist1) (not alist2))
+                         (let ((key1 (caar alist1))
+                               (key2 (caar alist2))
+                               (value1 (cdar alist1))
+                               (value2 (cdar alist2)))
+                           (when (and (funcall key-test key1 key2)
+                                      (funcall value-test value1 value2))
+                             (alist-eq (cdr alist1) (cdr alist2)))))))
+            (alist-eq (conflict-entries node1) (conflict-entries node2)))))
+    (dict-table
+     (and (typep node2 'dict-table)
+          (equal (table-bitmap node1) (table-bitmap node2))
+          (array-eq (table-array node1)
+                    (table-array node2)
+                    (lambda (dict1 dict2)
+                      (%hash-dict-eq dict1 dict2 key-test value-test)))))
+    (t nil)))
 
 (defun dict-eq (dict1 dict2 &key (value-test #'equal))
   (let ((test1 (hamt-test dict1)))

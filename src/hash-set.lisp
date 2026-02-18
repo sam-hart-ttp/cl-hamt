@@ -1,11 +1,5 @@
 (in-package #:cl-hamt)
 
-(defclass set-leaf (leaf) ())
-
-(defclass set-conflict (conflict) ())
-(defclass set-table (table) ())
-
-
 (defun %set-lookup-node (node key hash depth test)
   (declare (optimize (speed 3) (safety 0) (debug 0))
            (type (unsigned-byte 32) hash)
@@ -37,16 +31,16 @@
      (let ((nkey (node-key node)))
        (if (funcall test key nkey)
            node
-           (make-instance 'set-conflict
-                          :hash hash
-                          :entries (list key nkey)))))
+           (make-set-conflict
+            :hash hash
+            :entries (list key nkey)))))
     (set-conflict
      (let ((entries (conflict-entries node)))
        (if (member key entries :test test)
            node
-           (make-instance 'set-conflict
-                          :hash hash
-                          :entries (cons key entries)))))
+           (make-set-conflict
+            :hash hash
+            :entries (cons key entries)))))
     (set-table
      (with-table node hash depth
          (bitmap array bits index hit)
@@ -58,19 +52,19 @@
                   (new-node (%set-insert-node old-node key hash (1+ depth) test)))
              (if (eq new-node old-node)
                  node
-                 (make-instance 'set-table
-                                :bitmap bitmap
-                                :table (vec-update array index new-node))))
+                 (make-set-table
+                  :bitmap bitmap
+                  :table (vec-update array index new-node))))
            (let ((new-node (if (= depth 6)
-                               (make-instance 'set-leaf :key key)
-                               (%set-insert-node (make-instance 'set-table)
+                               (make-set-leaf :key key)
+                               (%set-insert-node (make-set-table)
                                                  key
                                                  hash
                                                  (1+ depth)
                                                  test))))
-             (make-instance 'set-table
-                            :bitmap (logior bitmap (ash 1 bits))
-                            :table (vec-insert array index new-node))))))
+             (make-set-table
+              :bitmap (logior bitmap (ash 1 bits))
+              :table (vec-insert array index new-node))))))
     (t node)))
 
 (defun %set-remove-node (node key hash depth test)
@@ -94,11 +88,11 @@
        (cond
          ((not removed) node)
          ((= kept-count 1)
-          (make-instance 'set-leaf
-                         :key (car kept)))
-         (t (make-instance 'set-conflict
-                           :hash hash
-                           :entries (nreverse kept))))))
+          (make-set-leaf
+           :key (car kept)))
+         (t (make-set-conflict
+             :hash hash
+             :entries (nreverse kept))))))
     (set-table
      (with-table node hash depth
          (bitmap array bits index hit)
@@ -112,23 +106,14 @@
              (cond
                ((eq new-node old-node) node)
                (new-node
-                (make-instance 'set-table
-                               :bitmap bitmap
-                               :table (vec-update array index new-node)))
+                (make-set-table
+                 :bitmap bitmap
+                 :table (vec-update array index new-node)))
                ((= bitmap 1) nil)
-               (t (make-instance 'set-table
-                                 :bitmap (logxor bitmap (ash 1 bits))
-                                 :table (vec-remove array index))))))))
+               (t (make-set-table
+                   :bitmap (logxor bitmap (ash 1 bits))
+                   :table (vec-remove array index))))))))
     (t node)))
-
-
-
-;; Methods for reducing over elements of hash-sets
-(defmethod %hamt-reduce (func (node set-leaf) initial-value)
-  (funcall func initial-value (node-key node)))
-
-(defmethod %hamt-reduce (func (node set-conflict) initial-value)
-  (reduce func (conflict-entries node) :initial-value initial-value))
 
 
 
@@ -137,9 +122,7 @@
   ((table
     :reader hamt-table
     :initarg :table
-    :initform (make-instance 'set-table
-                             :bitmap 0
-                             :table (make-array 0)))))
+    :initform (make-set-table))))
 
 (defun empty-set (&key (test #'equal) (hash #'cl-murmurhash:murmurhash))
   "Return an empty hash-set, in which elements will be compared and hashed
@@ -210,9 +193,7 @@ comparison and hash functions for the mapped set."
                                               0
                                               mapped-test)))
                         set
-                        (make-instance 'set-table
-                                       :bitmap 0
-                                       :table (make-array 0))))))
+                        (make-set-table)))))
 
 (defun set-filter (predicate set)
   "Return the elements of the set satisfying a given predicate."
@@ -223,7 +204,7 @@ comparison and hash functions for the mapped set."
      :test test
      :hash hash
      :table (set-reduce (lambda (filtered-table x)
-                          (if (funcall predicate x)
+                        (if (funcall predicate x)
                               (%set-insert-node filtered-table
                                                 x
                                                 (funcall hash x)
@@ -231,9 +212,7 @@ comparison and hash functions for the mapped set."
                                                 test)
                               filtered-table))
                         set
-                        (make-instance 'set-table
-                                       :bitmap 0
-                                       :table (make-array 0))))))
+                        (make-set-table)))))
 
 (defun set->list (set)
   (set-reduce (lambda (lst x) (cons x lst))
@@ -260,26 +239,23 @@ comparison and hash functions for the mapped set."
             (set-intersection set1 set2)))
 
 
-;; Methods for deciding if two sets are equal
-(defgeneric %hash-set-eq (set1 set2 test))
-
-(defmethod %hash-set-eq (node1 node2 test)
-  (declare (ignore node1 node2 test))
-  nil)
-
-(defmethod %hash-set-eq ((node1 set-leaf) (node2 set-leaf) test)
-  (funcall test (node-key node1) (node-key node2)))
-
-(defmethod %hash-set-eq ((node1 set-conflict) (node2 set-conflict) test)
-  (and (equal (conflict-hash node1) (conflict-hash node2))
-       (tree-equal (conflict-entries node1) (conflict-entries node2) :test test)))
-
-(defmethod %hash-set-eq ((node1 set-table) (node2 set-table) test)
-  (and (equal (table-bitmap node1) (table-bitmap node2))
-       (array-eq (table-array node1)
-                 (table-array node2)
-                 (lambda (set1 set2)
-                   (%hash-set-eq set1 set2 test)))))
+(defun %hash-set-eq (node1 node2 test)
+  (typecase node1
+    (set-leaf
+     (and (typep node2 'set-leaf)
+          (funcall test (node-key node1) (node-key node2))))
+    (set-conflict
+     (and (typep node2 'set-conflict)
+          (equal (conflict-hash node1) (conflict-hash node2))
+          (tree-equal (conflict-entries node1) (conflict-entries node2) :test test)))
+    (set-table
+     (and (typep node2 'set-table)
+          (equal (table-bitmap node1) (table-bitmap node2))
+          (array-eq (table-array node1)
+                    (table-array node2)
+                    (lambda (set1 set2)
+                      (%hash-set-eq set1 set2 test)))))
+    (t nil)))
 
 (defun set-eq (set1 set2)
   (let ((test1 (hamt-test set1)))
