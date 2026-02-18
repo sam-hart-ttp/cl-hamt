@@ -7,6 +7,8 @@
 (defconstant +slice-bits+ 5)
 (defconstant +hash-bits+ 64)
 (defconstant +bitmap-bits+ (ash 1 +slice-bits+))
+;; Note: depth +max-hash-depth+ uses only (- +hash-bits+ (* +slice-bits+ +max-hash-depth+))
+;; effective bits (e.g. 4 bits → 16-way) since (1+ +max-hash-depth+) × +slice-bits+ > +hash-bits+.
 (defconstant +max-hash-depth+ (floor (1- +hash-bits+) +slice-bits+))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)

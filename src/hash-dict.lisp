@@ -27,6 +27,10 @@
 ;; Inserting into a leaf either functionally updates the value stored in the
 ;; current node if the keys match, or creates a conflict node if the keys do
 ;; not match but their hashes do.
+;; Leaves always reside at +max-hash-depth+, so reaching a leaf with a
+;; non-matching key means the full 64-bit hashes are identical.  A conflict
+;; node (linear bucket) is therefore the correct structure — there are no
+;; remaining hash bits to discriminate on with a deeper sub-table.
 (defun %dict-insert-node (node key value hash depth test)
   (declare (optimize (speed 3) (safety 0) (debug 0))
            (type (unsigned-byte 64) hash)

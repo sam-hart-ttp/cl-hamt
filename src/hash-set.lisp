@@ -19,6 +19,10 @@
 ;; Adding a new element to a leaf node either returns the leaf node if that
 ;; item was already present in the set, or creates a conflict node if there
 ;; was a hash collision.
+;; Leaves always reside at +max-hash-depth+, so reaching a leaf with a
+;; non-matching key means the full 64-bit hashes are identical.  A conflict
+;; node (linear bucket) is therefore the correct structure — there are no
+;; remaining hash bits to discriminate on with a deeper sub-table.
 (defun %set-insert-node (node key hash depth test)
   (declare (optimize (speed 3) (safety 0) (debug 0))
            (type (unsigned-byte 64) hash)
