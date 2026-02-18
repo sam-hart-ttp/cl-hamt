@@ -109,7 +109,7 @@
                 (make-set-table
                  :bitmap bitmap
                  :table (vec-update array index new-node)))
-               ((= bitmap 1) nil)
+               ((= bitmap (ash 1 bits)) nil)
                (t (make-set-table
                    :bitmap (logxor bitmap (ash 1 bits))
                    :table (vec-remove array index))))))))
