@@ -24,6 +24,21 @@ or pass `:hash` to supply a custom hash function.
 See the `examples/` directory for some usage examples of the library, or the unit tests.
 Some benchmark code can be found in `tests/benchmarks.lisp`.
 
+Hash Quality Analysis
+=====================
+
+A standalone statistical hash analysis script is available at
+`test/hash-stats.lisp`. It reports:
+- unique hash count / collision count
+- bucket occupancy min/max and chi-square
+- bit-1 ratio across 32 output bits
+
+Example:
+```
+sbcl --script test/hash-stats.lisp -- 50000 4096
+```
+Arguments are `N` samples and number of `buckets` (defaults: `50000`, `4096`).
+
 
 Implementation
 ==============
