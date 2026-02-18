@@ -22,8 +22,14 @@
       (values nil nil)))
 
 (defmethod %hamt-lookup ((node dict-table) key hash depth test)
+  (declare (optimize (speed 3) (safety 0) (debug 0))
+           (type (unsigned-byte 32) hash)
+           (type fixnum depth))
   (with-table node hash depth
       (bitmap array bits index hit)
+    (declare (type (unsigned-byte 32) bitmap)
+             (type simple-vector array)
+             (type fixnum bits index))
     (if hit
         (%hamt-lookup (aref array index) key hash (1+ depth) test)
         (values nil nil))))
@@ -87,8 +93,14 @@
                           :entries (cons (cons key value) entries)))))))
 
 (defmethod %dict-insert ((node dict-table) key value hash depth test)
+  (declare (optimize (speed 3) (safety 0) (debug 0))
+           (type (unsigned-byte 32) hash)
+           (type fixnum depth))
   (with-table node hash depth
       (bitmap array bits index hit)
+    (declare (type (unsigned-byte 32) bitmap)
+             (type simple-vector array)
+             (type fixnum bits index))
     (flet ((%insert (table)
              (%dict-insert table key value hash (1+ depth) test)))
       (if hit

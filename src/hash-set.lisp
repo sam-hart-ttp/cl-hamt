@@ -13,8 +13,14 @@
   (funcall test (node-key node) key))
 
 (defmethod %hamt-lookup ((node set-table) key hash depth test)
+  (declare (optimize (speed 3) (safety 0) (debug 0))
+           (type (unsigned-byte 32) hash)
+           (type fixnum depth))
   (with-table node hash depth
       (bitmap array bits index hit)
+    (declare (type (unsigned-byte 32) bitmap)
+             (type simple-vector array)
+             (type fixnum bits index))
     (when hit
       (%hamt-lookup (aref array index) key hash (1+ depth) test))))
 
@@ -49,8 +55,14 @@
                        :entries (cons key entries)))))
 
 (defmethod %set-insert ((node set-table) key hash depth test)
+  (declare (optimize (speed 3) (safety 0) (debug 0))
+           (type (unsigned-byte 32) hash)
+           (type fixnum depth))
   (with-table node hash depth
       (bitmap array bits index hit)
+    (declare (type (unsigned-byte 32) bitmap)
+             (type simple-vector array)
+             (type fixnum bits index))
     (flet ((%insert (table)
              (%set-insert table key hash (1+ depth) test)))
       (if hit

@@ -95,8 +95,14 @@
 ;; Removing a key from a table node can mean updating its bitmap if there
 ;; is nothing left in the corresponding branch.
 (defmethod %hamt-remove ((node table) key hash depth test)
+  (declare (optimize (speed 3) (safety 0) (debug 0))
+           (type (unsigned-byte 32) hash)
+           (type fixnum depth))
   (with-table node hash depth
       (bitmap array bits index hit)
+    (declare (type (unsigned-byte 32) bitmap)
+             (type simple-vector array)
+             (type fixnum bits index))
     (if (not hit)
         node
         (let* ((old-node (aref array index))
