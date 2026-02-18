@@ -138,6 +138,12 @@
     :initarg :table
     :initform (make-dict-table))))
 
+(defmacro rebuild-hash-dict (test hash &body table-form)
+  `(make-instance 'hash-dict
+                  :test ,test
+                  :hash ,hash
+                  :table (progn ,@table-form)))
+
 (defun empty-dict (&key (test #'equal) hash (hash-mode :fast))
   "Return an empty hash-dict, in which keys will be compared and hashed
 with the supplied test and hash functions. The hash must be a 64-bit hash.
@@ -215,58 +221,49 @@ cannot be sensitive to the order in which the items are reduced."
 Optionally use new comparison and hash functions for the mapped dict."
   (let ((mapped-test (if test test (hamt-test dict)))
         (mapped-hash (if hash hash (hamt-hash dict))))
-    (make-instance
-     'hash-dict
-     :test mapped-test
-     :hash mapped-hash
-     :table (dict-reduce (lambda (mapped-table k v)
-                           (%dict-insert-node mapped-table
-                                              k
-                                              (funcall func v)
-                                              (funcall mapped-hash k)
-                                              0
-                                              mapped-test))
-                         dict
-                         (make-dict-table)))))
+    (rebuild-hash-dict mapped-test mapped-hash
+      (dict-reduce (lambda (mapped-table k v)
+                     (%dict-insert-node mapped-table
+                                        k
+                                        (funcall func v)
+                                        (funcall mapped-hash k)
+                                        0
+                                        mapped-test))
+                   dict
+                   (make-dict-table)))))
 
 (defun dict-map-keys (func dict &key test hash)
   "Return a new dict with the keys mapped by the given function."
   (let ((mapped-test (if test test (hamt-test dict)))
         (mapped-hash (if hash hash (hamt-hash dict))))
-    (make-instance
-     'hash-dict
-     :test mapped-test
-     :hash mapped-hash
-     :table (dict-reduce (lambda (mapped-table k v)
-                           (let ((key (funcall func k)))
-                             (%dict-insert-node mapped-table
-                                                key
-                                                v
-                                                (funcall mapped-hash key)
-                                                0
-                                                mapped-test)))
-                         dict
-                         (make-dict-table)))))
+    (rebuild-hash-dict mapped-test mapped-hash
+      (dict-reduce (lambda (mapped-table k v)
+                     (let ((key (funcall func k)))
+                       (%dict-insert-node mapped-table
+                                          key
+                                          v
+                                          (funcall mapped-hash key)
+                                          0
+                                          mapped-test)))
+                   dict
+                   (make-dict-table)))))
 
 (defun dict-filter (predicate dict)
   "Return a new dict consisting of the key/value pairs satisfying the
 given predicate."
   (with-hamt dict (:test test :hash hash)
-    (make-instance
-     'hash-dict
-     :test test
-     :hash hash
-     :table (dict-reduce (lambda (filtered-table k v)
-                           (if (funcall predicate k v)
-                               (%dict-insert-node filtered-table
-                                                  k
-                                                  v
-                                                  (funcall hash k)
-                                                  0
-                                                  test)
-                               filtered-table))
-                         dict
-                         (make-dict-table)))))
+    (rebuild-hash-dict test hash
+      (dict-reduce (lambda (filtered-table k v)
+                     (if (funcall predicate k v)
+                         (%dict-insert-node filtered-table
+                                            k
+                                            v
+                                            (funcall hash k)
+                                            0
+                                            test)
+                         filtered-table))
+                   dict
+                   (make-dict-table)))))
 
 (defun dict-reduce-keys (func dict initial-value)
   "Reducing over dictionary keys, ignoring the values."

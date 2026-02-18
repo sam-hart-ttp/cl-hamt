@@ -99,6 +99,12 @@
     :initarg :table
     :initform (make-set-table))))
 
+(defmacro rebuild-hash-set (test hash &body table-form)
+  `(make-instance 'hash-set
+                  :test ,test
+                  :hash ,hash
+                  :table (progn ,@table-form)))
+
 (defun empty-set (&key (test #'equal) hash (hash-mode :fast))
   "Return an empty hash-set, in which elements will be compared and hashed
 with the supplied test and hash functions. The hash must be a 64-bit hash.
@@ -161,37 +167,31 @@ cannot be sensitive to the order in which the items are reduced."
 comparison and hash functions for the mapped set."
   (let ((mapped-test (if test-supplied-p test (hamt-test set)))
         (mapped-hash (if hash-supplied-p hash (hamt-hash set))))
-    (make-instance
-     'hash-set
-     :test mapped-test
-     :hash mapped-hash
-     :table (set-reduce (lambda (mapped-table x)
-                          (let ((y (funcall func x)))
-                            (%set-insert-node mapped-table
-                                              y
-                                              (funcall mapped-hash y)
-                                              0
-                                              mapped-test)))
-                        set
-                        (make-set-table)))))
+    (rebuild-hash-set mapped-test mapped-hash
+      (set-reduce (lambda (mapped-table x)
+                    (let ((y (funcall func x)))
+                      (%set-insert-node mapped-table
+                                        y
+                                        (funcall mapped-hash y)
+                                        0
+                                        mapped-test)))
+                  set
+                  (make-set-table)))))
 
 (defun set-filter (predicate set)
   "Return the elements of the set satisfying a given predicate."
   (with-hamt set (:test test :hash hash)
-    (make-instance
-     'hash-set
-     :test test
-     :hash hash
-     :table (set-reduce (lambda (filtered-table x)
-                        (if (funcall predicate x)
-                              (%set-insert-node filtered-table
-                                                x
-                                                (funcall hash x)
-                                                0
-                                                test)
-                              filtered-table))
-                        set
-                        (make-set-table)))))
+    (rebuild-hash-set test hash
+      (set-reduce (lambda (filtered-table x)
+                    (if (funcall predicate x)
+                        (%set-insert-node filtered-table
+                                          x
+                                          (funcall hash x)
+                                          0
+                                          test)
+                        filtered-table))
+                  set
+                  (make-set-table)))))
 
 (defun set->list (set)
   (set-reduce (lambda (lst x) (cons x lst))
@@ -201,34 +201,28 @@ comparison and hash functions for the mapped set."
 (defun %set-merge-into (source target)
   "Insert all elements of SOURCE into TARGET using TARGET's hash/test."
   (with-hamt target (:test target-test :hash target-hash :table target-table)
-    (make-instance
-     'hash-set
-     :test target-test
-     :hash target-hash
-     :table (set-reduce (lambda (acc x)
-                          (%set-insert-node acc
-                                            x
-                                            (funcall target-hash x)
-                                            0
-                                            target-test))
-                        source
-                        target-table))))
+    (rebuild-hash-set target-test target-hash
+      (set-reduce (lambda (acc x)
+                    (%set-insert-node acc
+                                      x
+                                      (funcall target-hash x)
+                                      0
+                                      target-test))
+                  source
+                  target-table))))
 
 (defun %set-remove-all-from (base to-remove)
   "Remove all elements of TO-REMOVE from BASE using BASE's hash/test."
   (with-hamt base (:test base-test :hash base-hash :table base-table)
-    (make-instance
-     'hash-set
-     :test base-test
-     :hash base-hash
-     :table (set-reduce (lambda (acc x)
-                          (%set-remove-node acc
-                                            x
-                                            (funcall base-hash x)
-                                            0
-                                            base-test))
-                        to-remove
-                        base-table))))
+    (rebuild-hash-set base-test base-hash
+      (set-reduce (lambda (acc x)
+                    (%set-remove-node acc
+                                      x
+                                      (funcall base-hash x)
+                                      0
+                                      base-test))
+                  to-remove
+                  base-table))))
 
 (defun %set-intersection-into (left right)
   "Return elements of RIGHT that are present in LEFT.
@@ -236,24 +230,21 @@ The returned set uses RIGHT's hash/test semantics."
   (with-hamt left (:test left-test :hash left-hash :table left-table)
     (with-hamt right (:test right-test :hash right-hash :table right-table)
       (declare (ignore right-table))
-      (make-instance
-       'hash-set
-       :test right-test
-       :hash right-hash
-       :table (set-reduce (lambda (acc x)
-                            (if (%set-lookup-node left-table
-                                                  x
-                                                  (funcall left-hash x)
-                                                  0
-                                                  left-test)
-                                (%set-insert-node acc
-                                                  x
-                                                  (funcall right-hash x)
-                                                  0
-                                                  right-test)
-                                acc))
-                          right
-                          (make-set-table))))))
+      (rebuild-hash-set right-test right-hash
+        (set-reduce (lambda (acc x)
+                      (if (%set-lookup-node left-table
+                                            x
+                                            (funcall left-hash x)
+                                            0
+                                            left-test)
+                          (%set-insert-node acc
+                                            x
+                                            (funcall right-hash x)
+                                            0
+                                            right-test)
+                          acc))
+                    right
+                    (make-set-table))))))
 
 (defun set-union (set &rest args)
   (reduce (lambda (set1 set2)
