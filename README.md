@@ -35,9 +35,10 @@ A standalone statistical hash analysis script is available at
 
 Example:
 ```
-sbcl --script test/hash-stats.lisp -- 50000 4096
+sbcl --script test/hash-stats.lisp -- 50000 4096 20
 ```
-Arguments are `N` samples and number of `buckets` (defaults: `50000`, `4096`).
+Arguments are `N` samples, number of `buckets`, and number of `trials`
+(defaults: `50000`, `4096`, `20`).
 
 
 Implementation

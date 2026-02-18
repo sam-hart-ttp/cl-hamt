@@ -20,18 +20,21 @@
                                 (ignore-errors (parse-integer s)))
                               argv))))
     (values (parse-arg nums 0 50000)
-            (parse-arg nums 1 4096))))
+            (parse-arg nums 1 4096)
+            (parse-arg nums 2 20))))
 
 (defun hamming-weight32 (x)
   (logcount (ldb (byte 32 0) x)))
 
-(defun generate-integer-samples (n)
-  (loop for i below n collect i))
+(defun generate-integer-samples (n state)
+  (loop for i below n
+        collect (random (ash 1 31) state)))
 
-(defun generate-string-samples (n)
-  (loop for i below n collect (format nil "item-~D" i)))
+(defun generate-string-samples (n state)
+  (loop for i below n
+        collect (format nil "item-~D" (random (ash 1 30) state))))
 
-(defun hash-stats (name hash-fn samples buckets)
+(defun hash-stats-single (hash-fn samples buckets)
   (let* ((n (length samples))
          (counts (make-array buckets :element-type 'fixnum :initial-element 0))
          (seen (make-hash-table :test #'eql))
@@ -52,38 +55,100 @@
            (max-bucket (loop for c across counts maximize c))
            (min-bucket (loop for c across counts minimize c))
            (bit-one-ratio (/ (float bit-ones) (* 32.0 n))))
-      (format t "~&~A~%" name)
-      (format t "  samples: ~D~%" n)
-      (format t "  unique hashes: ~D~%" unique)
-      (format t "  collisions: ~D (~,2F%)~%" collisions (* 100.0 (/ collisions n)))
-      (format t "  buckets: ~D~%" buckets)
-      (format t "  bucket min/max: ~D / ~D~%" min-bucket max-bucket)
-      (format t "  chi-square: ~,3F~%" chi-square)
-      (format t "  bit-1 ratio: ~,4F (ideal ~,4F)~%~%" bit-one-ratio 0.5))))
+      (list :unique unique
+            :collisions collisions
+            :collision-rate (/ (float collisions) n)
+            :chi-square chi-square
+            :min-bucket min-bucket
+            :max-bucket max-bucket
+            :bit-one-ratio bit-one-ratio))))
 
-(defun run-analysis (n buckets)
-  (let ((int-samples (generate-integer-samples n))
-        (str-samples (generate-string-samples n)))
-    (format t "~&=== Integer Samples ===~%")
-    (hash-stats "xxhash32-object"
-                #'cl-hamt::xxhash32-object
-                int-samples
-                buckets)
-    (hash-stats "siphash32-object"
-                #'cl-hamt::siphash32-object
-                int-samples
-                buckets)
-    (format t "~&=== String Samples ===~%")
-    (hash-stats "xxhash32-object"
-                #'cl-hamt::xxhash32-object
-                str-samples
-                buckets)
-    (hash-stats "siphash32-object"
-                #'cl-hamt::siphash32-object
-                str-samples
-                buckets)))
+(defun mean (xs)
+  (/ (reduce #'+ xs) (length xs)))
 
-(multiple-value-bind (n buckets)
+(defun stddev (xs)
+  (let* ((n (length xs)))
+    (if (<= n 1)
+        0.0
+        (let* ((m (mean xs))
+               (var (/ (reduce #'+ xs
+                               :key (lambda (x)
+                                      (let ((d (- x m)))
+                                        (* d d))))
+                       (1- n))))
+          (sqrt var)))))
+
+(defun ci95-half-width (xs)
+  (if (<= (length xs) 1)
+      0.0
+      (* 1.96 (/ (stddev xs) (sqrt (length xs))))))
+
+(defun summarize-metric (xs)
+  (list :mean (mean xs)
+        :stddev (stddev xs)
+        :ci95 (ci95-half-width xs)))
+
+(defun summarize-trials (trial-results key)
+  (summarize-metric (mapcar (lambda (r) (getf r key)) trial-results)))
+
+(defun print-summary-line (label summary &key (percent nil) (digits 4))
+  (let ((m (getf summary :mean))
+        (ci (getf summary :ci95)))
+    (if percent
+        (format t "  ~A: ~,2F% +/- ~,2F% (95% CI)~%" label (* 100.0 m) (* 100.0 ci))
+        (format t "  ~A: ~,vf +/- ~,vf (95% CI)~%" label digits m digits ci))))
+
+(defun run-dataset-analysis (dataset-name sample-generator hash-name hash-fn n buckets trials state)
+  (let ((trial-results
+          (loop repeat trials
+                for samples = (funcall sample-generator n state)
+                collect (hash-stats-single hash-fn samples buckets))))
+    (format t "~&~A / ~A~%" dataset-name hash-name)
+    (format t "  samples/trial: ~D, buckets: ~D, trials: ~D~%" n buckets trials)
+    (print-summary-line "unique hashes"
+                        (summarize-trials trial-results :unique)
+                        :digits 2)
+    (print-summary-line "collisions"
+                        (summarize-trials trial-results :collisions)
+                        :digits 2)
+    (print-summary-line "collision rate"
+                        (summarize-trials trial-results :collision-rate)
+                        :percent t)
+    (print-summary-line "chi-square"
+                        (summarize-trials trial-results :chi-square)
+                        :digits 3)
+    (print-summary-line "bit-1 ratio"
+                        (summarize-trials trial-results :bit-one-ratio)
+                        :digits 5)
+    (format t "  bucket min/max across trials: ~D / ~D~%~%"
+            (reduce #'min trial-results :key (lambda (r) (getf r :min-bucket)))
+            (reduce #'max trial-results :key (lambda (r) (getf r :max-bucket))))))
+
+(defun run-analysis (n buckets trials)
+  (let ((state (make-random-state t)))
+    (run-dataset-analysis "Integer samples"
+                          #'generate-integer-samples
+                          "xxhash32-object"
+                          #'cl-hamt::xxhash32-object
+                          n buckets trials state)
+    (run-dataset-analysis "Integer samples"
+                          #'generate-integer-samples
+                          "siphash32-object"
+                          #'cl-hamt::siphash32-object
+                          n buckets trials state)
+    (run-dataset-analysis "String samples"
+                          #'generate-string-samples
+                          "xxhash32-object"
+                          #'cl-hamt::xxhash32-object
+                          n buckets trials state)
+    (run-dataset-analysis "String samples"
+                          #'generate-string-samples
+                          "siphash32-object"
+                          #'cl-hamt::siphash32-object
+                          n buckets trials state)))
+
+(multiple-value-bind (n buckets trials)
     (parse-numeric-args (cdr sb-ext:*posix-argv*))
-  (format t "~&Running hash analysis with N=~D, buckets=~D~%~%" n buckets)
-  (run-analysis n buckets))
+  (format t "~&Running hash analysis with N=~D, buckets=~D, trials=~D~%~%"
+          n buckets trials)
+  (run-analysis n buckets trials))
