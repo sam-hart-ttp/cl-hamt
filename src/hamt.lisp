@@ -105,6 +105,26 @@
              (push ,entry ,kept))))
      ,@body))
 
+(defmacro with-conflict-equality-check ((node1 node2 conflict-type)
+                                        (entries1 entries2)
+                                        &body body)
+  `(and (typep ,node2 ',conflict-type)
+        (equal (conflict-hash ,node1) (conflict-hash ,node2))
+        (let ((,entries1 (conflict-entries ,node1))
+              (,entries2 (conflict-entries ,node2)))
+          (and (= (length ,entries1) (length ,entries2))
+               ,@body))))
+
+(defmacro with-table-equality-check ((node1 node2 table-type)
+                                     (child1 child2)
+                                     &body body)
+  `(and (typep ,node2 ',table-type)
+        (equal (table-bitmap ,node1) (table-bitmap ,node2))
+        (array-eq (table-array ,node1)
+                  (table-array ,node2)
+                  (lambda (,child1 ,child2)
+                    ,@body))))
+
 (declaim (inline node-key node-value conflict-hash conflict-entries table-bitmap table-array))
 
 (defun node-key (node)

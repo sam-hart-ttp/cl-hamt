@@ -295,23 +295,15 @@ given predicate."
           (funcall key-test (node-key node1) (node-key node2))
           (funcall value-test (node-value node1) (node-value node2))))
     (dict-conflict
-     (and (typep node2 'dict-conflict)
-          (equal (conflict-hash node1) (conflict-hash node2))
-          (let ((entries1 (conflict-entries node1))
-                (entries2 (conflict-entries node2)))
-            (and (= (length entries1) (length entries2))
-                 (every (lambda (kv1)
-                          (let ((kv2 (assoc (car kv1) entries2 :test key-test)))
-                            (and kv2
-                                 (funcall value-test (cdr kv1) (cdr kv2)))))
-                        entries1)))))
+     (with-conflict-equality-check (node1 node2 dict-conflict) (entries1 entries2)
+       (every (lambda (kv1)
+                (let ((kv2 (assoc (car kv1) entries2 :test key-test)))
+                  (and kv2
+                       (funcall value-test (cdr kv1) (cdr kv2)))))
+              entries1)))
     (dict-table
-     (and (typep node2 'dict-table)
-          (equal (table-bitmap node1) (table-bitmap node2))
-          (array-eq (table-array node1)
-                    (table-array node2)
-                    (lambda (dict1 dict2)
-                      (%hash-dict-eq dict1 dict2 key-test value-test)))))
+     (with-table-equality-check (node1 node2 dict-table) (dict1 dict2)
+       (%hash-dict-eq dict1 dict2 key-test value-test)))
     (t nil)))
 
 (defun dict-eq (dict1 dict2 &key (value-test #'equal))
