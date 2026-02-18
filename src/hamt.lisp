@@ -33,9 +33,9 @@
     :initarg :test
     :initform #'equal)
    (hash
-    :reader hamt-hash
-    :initarg :hash
-    :initform #'cl-murmurhash:murmurhash)
+   :reader hamt-hash
+   :initarg :hash
+    :initform #'xxhash32-object)
    (table
     :reader hamt-table
     :initarg :table)))

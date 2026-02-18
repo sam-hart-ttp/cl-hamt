@@ -124,14 +124,15 @@
     :initarg :table
     :initform (make-set-table))))
 
-(defun empty-set (&key (test #'equal) (hash #'cl-murmurhash:murmurhash))
+(defun empty-set (&key (test #'equal) hash (hash-mode :fast))
   "Return an empty hash-set, in which elements will be compared and hashed
-with the supplied test and hash functions. The hash must be a 32-bit hash."
+with the supplied test and hash functions. The hash must be a 32-bit hash.
+If HASH is not supplied, HASH-MODE chooses :FAST (xxHash32) or :SECURE (SipHash)."
   (make-instance 'hash-set
                  :test (ctypecase test
                          (function test)
                          (symbol (symbol-function test)))
-                 :hash hash))
+                 :hash (resolve-hash-function hash hash-mode)))
 
 (defun set-lookup (set x)
   "Return true if the object x is in the set, false otherwise"
