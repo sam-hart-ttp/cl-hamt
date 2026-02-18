@@ -21,6 +21,7 @@
 (test hash-mode-validation
   (signals error
     (empty-set :hash-mode :unknown))
+  (is (typep (empty-set :test 'equal :hash-mode :fast) 'hash-set))
   (signals error
     (empty-set :test #'equalp :hash-mode :fast))
   (is (typep (empty-set :test #'equalp

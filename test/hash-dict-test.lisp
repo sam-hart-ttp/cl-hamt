@@ -22,6 +22,7 @@
 (test hash-mode-validation
   (signals error
     (empty-dict :hash-mode :unknown))
+  (is (typep (empty-dict :test 'equal :hash-mode :fast) 'hash-dict))
   (signals error
     (empty-dict :test #'equalp :hash-mode :fast))
   (is (typep (empty-dict :test #'equalp

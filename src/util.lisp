@@ -382,18 +382,20 @@ or circular structures."
     (function test)
     (symbol (symbol-function test))))
 
-(defun default-hash-test-compatible-p (test-fn)
-  "Default hash modes are only guaranteed for EQ/EQL/EQUAL semantics."
-  (or (eq test-fn #'eq)
+(defun default-hash-test-compatible-p (test test-fn)
+  "Default hash modes are intentionally restricted to EQ/EQL/EQUAL semantics."
+  (or (and (symbolp test)
+           (member test '(eq eql equal)))
+      (eq test-fn #'eq)
       (eq test-fn #'eql)
       (eq test-fn #'equal)))
 
-(defun validate-hash-test-compatibility (test-fn hash hash-mode)
+(defun validate-hash-test-compatibility (test test-fn hash hash-mode)
   (declare (ignore hash-mode))
   (when (and (null hash)
-             (not (default-hash-test-compatible-p test-fn)))
-    (error "Default hash modes require TEST to be EQ, EQL, or EQUAL. Supply an explicit compatible :HASH for TEST ~S."
-           test-fn)))
+             (not (default-hash-test-compatible-p test test-fn)))
+    (error "Default hash modes are intentionally restricted to TEST EQ, EQL, or EQUAL. Supply explicit :HASH to override (TEST=~S)."
+           test)))
 
 (defun resolve-hash-function (hash hash-mode)
   "Resolve a hash function from explicit HASH or HASH-MODE.
