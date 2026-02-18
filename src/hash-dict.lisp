@@ -81,14 +81,12 @@
        (if hit
            (let* ((old-node (aref array index))
                   (new-node (%dict-insert-node old-node key value hash (1+ depth) test)))
-             (if (eq new-node old-node)
-                 node
-                 (make-dict-table
-                  :bitmap bitmap
-                  :table (vec-update array index new-node))))
-           (let ((new-node (if (= depth +max-hash-depth+)
-                               (make-dict-leaf
-                                :key key
+               (if (eq new-node old-node)
+                   node
+                   (rewrite-table-update make-dict-table bitmap array index new-node)))
+            (let ((new-node (if (= depth +max-hash-depth+)
+                                (make-dict-leaf
+                                 :key key
                                 :value value)
                                (%dict-insert-node (make-dict-table)
                                                   key
@@ -96,9 +94,7 @@
                                                   hash
                                                   (1+ depth)
                                                   test))))
-             (make-dict-table
-              :bitmap (logior bitmap (ash 1 bits))
-              :table (vec-insert array index new-node))))))
+              (rewrite-table-insert make-dict-table bitmap bits array index new-node)))))
     (t node)))
 
 (defun %dict-remove-node (node key hash depth test)
@@ -144,13 +140,8 @@
              (cond
                ((eq new-node old-node) node)
                (new-node
-                (make-dict-table
-                 :bitmap bitmap
-                 :table (vec-update array index new-node)))
-               ((= bitmap (ash 1 bits)) nil)
-               (t (make-dict-table
-                   :bitmap (logxor bitmap (ash 1 bits))
-                   :table (vec-remove array index))))))))
+                (rewrite-table-update make-dict-table bitmap array index new-node))
+               (t (rewrite-table-remove-or-empty make-dict-table bitmap bits array index)))))))
     (t node)))
 
 

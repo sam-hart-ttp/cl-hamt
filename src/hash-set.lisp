@@ -50,21 +50,17 @@
        (if hit
            (let* ((old-node (aref array index))
                   (new-node (%set-insert-node old-node key hash (1+ depth) test)))
-             (if (eq new-node old-node)
-                 node
-                 (make-set-table
-                  :bitmap bitmap
-                  :table (vec-update array index new-node))))
-           (let ((new-node (if (= depth +max-hash-depth+)
-                               (make-set-leaf :key key)
-                               (%set-insert-node (make-set-table)
-                                                 key
-                                                 hash
-                                                 (1+ depth)
-                                                 test))))
-             (make-set-table
-              :bitmap (logior bitmap (ash 1 bits))
-              :table (vec-insert array index new-node))))))
+               (if (eq new-node old-node)
+                   node
+                   (rewrite-table-update make-set-table bitmap array index new-node)))
+            (let ((new-node (if (= depth +max-hash-depth+)
+                                (make-set-leaf :key key)
+                                (%set-insert-node (make-set-table)
+                                                  key
+                                                  hash
+                                                  (1+ depth)
+                                                  test))))
+              (rewrite-table-insert make-set-table bitmap bits array index new-node)))))
     (t node)))
 
 (defun %set-remove-node (node key hash depth test)
@@ -106,13 +102,8 @@
              (cond
                ((eq new-node old-node) node)
                (new-node
-                (make-set-table
-                 :bitmap bitmap
-                 :table (vec-update array index new-node)))
-               ((= bitmap (ash 1 bits)) nil)
-               (t (make-set-table
-                   :bitmap (logxor bitmap (ash 1 bits))
-                   :table (vec-remove array index))))))))
+                (rewrite-table-update make-set-table bitmap array index new-node))
+               (t (rewrite-table-remove-or-empty make-set-table bitmap bits array index)))))))
     (t node)))
 
 

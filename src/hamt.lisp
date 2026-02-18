@@ -65,6 +65,23 @@
           (,hit (logbitp ,bits ,bitmap)))
      ,@body))
 
+(defmacro rewrite-table-update (table-constructor bitmap array index new-node)
+  `(,table-constructor
+    :bitmap ,bitmap
+    :table (vec-update ,array ,index ,new-node)))
+
+(defmacro rewrite-table-insert (table-constructor bitmap bits array index new-node)
+  `(,table-constructor
+    :bitmap (logior ,bitmap (ash 1 ,bits))
+    :table (vec-insert ,array ,index ,new-node)))
+
+(defmacro rewrite-table-remove-or-empty (table-constructor bitmap bits array index)
+  `(if (= ,bitmap (ash 1 ,bits))
+       nil
+       (,table-constructor
+        :bitmap (logxor ,bitmap (ash 1 ,bits))
+        :table (vec-remove ,array ,index))))
+
 (declaim (inline node-key node-value conflict-hash conflict-entries table-bitmap table-array))
 
 (defun node-key (node)
