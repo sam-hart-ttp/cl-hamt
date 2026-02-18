@@ -11,6 +11,14 @@
 (defun %u64 (x)
   (ldb (byte 64 0) x))
 
+(defun %random-u64 (state)
+  (%u64 (random (ash 1 64) state)))
+
+(defparameter *siphash-random-state* (make-random-state t))
+(defparameter *siphash-k0* (%random-u64 *siphash-random-state*))
+(defparameter *siphash-k1* (%random-u64 *siphash-random-state*))
+(declaim (type (unsigned-byte 64) *siphash-k0* *siphash-k1*))
+
 (defun %rotl32 (x r)
   (declare (type (unsigned-byte 32) x)
            (type fixnum r))
@@ -43,10 +51,11 @@
     h))
 
 (defun siphash32-object (obj)
-  "SipHash-2-4 over the 64-bit sxhash representation of OBJ, truncated to 32-bit."
+  "SipHash-2-4 over the 64-bit sxhash representation of OBJ, truncated to 32-bit.
+Uses process-local random keys."
   (declare (optimize (speed 3) (safety 0) (debug 0)))
-  (let* ((k0 #x0706050403020100)
-         (k1 #x0f0e0d0c0b0a0908)
+  (let* ((k0 *siphash-k0*)
+         (k1 *siphash-k1*)
          (v0 (logxor #x736f6d6570736575 k0))
          (v1 (logxor #x646f72616e646f6d k1))
          (v2 (logxor #x6c7967656e657261 k0))

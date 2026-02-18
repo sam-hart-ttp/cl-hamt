@@ -248,7 +248,12 @@ comparison and hash functions for the mapped set."
     (set-conflict
      (and (typep node2 'set-conflict)
           (equal (conflict-hash node1) (conflict-hash node2))
-          (tree-equal (conflict-entries node1) (conflict-entries node2) :test test)))
+          (let ((entries1 (conflict-entries node1))
+                (entries2 (conflict-entries node2)))
+            (and (= (length entries1) (length entries2))
+                 (every (lambda (x)
+                          (member x entries2 :test test))
+                        entries1)))))
     (set-table
      (and (typep node2 'set-table)
           (equal (table-bitmap node1) (table-bitmap node2))
