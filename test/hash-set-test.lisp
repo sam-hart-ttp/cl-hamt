@@ -31,6 +31,30 @@
                                                              x)))))
              'hash-set)))
 
+(test siphash-reference-vectors
+  "Verify %siphash64-octets against the official SipHash-2-4 test vectors.
+Key: 00 01 02 ... 0f, message: 00 01 02 ... (n-1)."
+  (let ((cl-hamt::*siphash-k0* #x0706050403020100)
+        (cl-hamt::*siphash-k1* #x0f0e0d0c0b0a0908)
+        (expected (list #x726fdb47dd0e0e31   ; len 0
+                        #x74f839c593dc67fd   ; len 1
+                        #x0d6c8009d9a94f5a   ; len 2
+                        #x85676696d7fb7e2d   ; len 3
+                        #xab0200f58b01d137   ; len 7
+                        #x93f5f5799a932462   ; len 8
+                        #xf723ca908e7af2ee   ; len 14
+                        #xa129ca6149be45e5)) ; len 15
+        (lengths  (list 0 1 2 3 7 8 14 15)))
+    (loop for len in lengths
+          for want in expected do
+      (let* ((octets (make-array len :element-type '(unsigned-byte 8)))
+             (_ (loop for i below len do (setf (aref octets i) i)))
+             (got (cl-hamt::%siphash64-octets octets)))
+        (declare (ignore _))
+        (is (= want got)
+            "SipHash-2-4 mismatch at len ~D: expected #x~16,'0X got #x~16,'0X"
+            len want got)))))
+
 (test hash-output-range-and-spread
   (let* ((samples (loop for i below 128 collect (format nil "item-~D" i)))
          (fast-hashes (mapcar #'cl-hamt::xxhash64-object samples))
